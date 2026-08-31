@@ -13,6 +13,8 @@
   "dependencies": {
     "@tanstack/react-query": "^5.60.0",
     "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/plugin-fs": "^2.5.2",
     "@tourenbuch/shared": "workspace:*",
     "maplibre-gl": "^6.6.0",
     "react": "^19.0.0",

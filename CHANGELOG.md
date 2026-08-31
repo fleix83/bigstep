@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase 4 – GPX-Import/-Export (2026-08-31)
+
+- `packages/shared`: GPX-Parser/-Serializer (`gpx.ts`, fast-xml-parser) für Tracks (1.0/1.1, mehrere Segmente werden aneinandergehängt) mit `<rte>`-Fallback; Geo-Helfer (`geo.ts`): Haversine-Distanz, bbox, Auf-/Abstieg aus GPX-Höhen (3-m-Schwelle gegen GPS-Rauschen). 12 neue Tests mit Fixtures (mit/ohne Höhen, nur Route, Fehlerfälle); Roundtrip parse→serialize→parse verlustfrei.
+- Import-Dialog im Desktop: Datei wählen, gestrichelte orange Vorschau auf der Karte (Dialog ohne Backdrop, fitBounds auf die Vorschau), Name editierbar (Vorbelegung aus Trackname bzw. Dateiname), Kennzahlen-Anzeige; Übernehmen legt die Tour mit Geometrie, bbox, Distanz und – falls Höhen vorhanden – Auf-/Abstieg an. Wanderzeit folgt in Phase 5 (profile.json).
+- Export der aktiven Tour als GPX 1.1: in der Tauri-App über den nativen Save-Dialog (`tauri-plugin-dialog` + `tauri-plugin-fs`, per `cargo check` verifiziert), im Browser/PWA als Download. Export-Inhalt im Browser E2E verifiziert: identische Koordinaten und Höhen wie die Quelldatei.
+
 ## Phase 3 – Karte (2026-08-31)
 
 - `apps/desktop`: MapLibre GL JS mit swisstopo-WMTS-Basiskarten (Landeskarte `ch.swisstopo.pixelkarte-farbe`, Luftbild `ch.swisstopo.swissimage`), Attribution «© swisstopo» dauerhaft sichtbar (nicht kollabierbar).

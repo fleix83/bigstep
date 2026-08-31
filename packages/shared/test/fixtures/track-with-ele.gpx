@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Testgerät" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Metadaten-Name</name>
+  </metadata>
+  <trk>
+    <name>Basel – Chrischona</name>
+    <trkseg>
+      <trkpt lat="47.5566" lon="7.5906"><ele>260.5</ele></trkpt>
+      <trkpt lat="47.5613" lon="7.6035"><ele>265</ele></trkpt>
+      <trkpt lat="47.5666" lon="7.6218"><ele>310.2</ele></trkpt>
+      <trkpt lat="47.5694" lon="7.641"><ele>380</ele></trkpt>
+      <trkpt lat="47.5713" lon="7.6572"><ele>450.7</ele></trkpt>
+      <trkpt lat="47.5721" lon="7.687"><ele>493</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Planer" xmlns="http://www.topografix.com/GPX/1/1">
+  <rte>
+    <name>Geplante Route</name>
+    <rtept lat="46.9481" lon="7.4474"/>
+    <rtept lat="46.9524" lon="7.4396"/>
+    <rtept lat="46.9572" lon="7.4353"/>
+  </rte>
+</gpx>

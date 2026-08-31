@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "drizzle-orm": "catalog:",
+    "fast-xml-parser": "^5.11.1",
     "zod": "catalog:"
   },
   "devDependencies": {

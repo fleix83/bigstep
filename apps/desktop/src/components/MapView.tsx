@@ -11,7 +11,7 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Feature, FeatureCollection } from 'geojson'
 import { useQuery } from '@tanstack/react-query'
-import type { Tour } from '@tourenbuch/shared'
+import { lineBbox, type LineString, type Tour } from '@tourenbuch/shared'
 import { useApi } from '../lib/api'
 import {
   BASE_LAYERS,
@@ -44,6 +44,8 @@ interface Props {
   tours: Tour[] | undefined
   /** false, solange der Book-Reiter offen ist (Karte bleibt gemountet). */
   visible: boolean
+  /** Import-Vorschau: gestrichelte Linie, Karte fliegt auf deren bbox. */
+  preview?: LineString | null
 }
 
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
@@ -91,6 +93,7 @@ function buildStyle(state: MapState): StyleSpecification {
   }
   style.sources['other-tours'] = { type: 'geojson', data: EMPTY_FC }
   style.sources['active-tour'] = { type: 'geojson', data: EMPTY_FC }
+  style.sources['import-preview'] = { type: 'geojson', data: EMPTY_FC }
   style.layers.push(
     {
       id: 'other-tours-line',
@@ -112,12 +115,23 @@ function buildStyle(state: MapState): StyleSpecification {
       source: 'active-tour',
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': '#2563eb', 'line-width': 3.5 },
+    },
+    {
+      id: 'import-preview-line',
+      type: 'line',
+      source: 'import-preview',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#ea580c',
+        'line-width': 3.5,
+        'line-dasharray': [2, 1.5],
+      },
     }
   )
   return style
 }
 
-export function MapView({ tour, tours, visible }: Props) {
+export function MapView({ tour, tours, visible, preview = null }: Props) {
   const api = useApi()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MaplibreMap | null>(null)
@@ -254,6 +268,31 @@ export function MapView({ tour, tours, visible }: Props) {
       .filter((f): f is Feature => f !== null)
     src?.setData({ type: 'FeatureCollection', features })
   }, [tours, tour?.id, ready])
+
+  // Import-Vorschau zeichnen und dorthin fliegen.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    const src = map.getSource('import-preview') as GeoJSONSource | undefined
+    src?.setData(
+      preview
+        ? {
+            type: 'FeatureCollection',
+            features: [{ type: 'Feature', properties: {}, geometry: preview }],
+          }
+        : EMPTY_FC
+    )
+    if (preview) {
+      const [minLon, minLat, maxLon, maxLat] = lineBbox(preview)
+      map.fitBounds(
+        [
+          [minLon, minLat],
+          [maxLon, maxLat],
+        ],
+        { padding: 48, duration: 600, maxZoom: 15 }
+      )
+    }
+  }, [preview, ready])
 
   // Tourwechsel → Karte auf die gespeicherte bbox fliegen (PRD F5).
   useEffect(() => {

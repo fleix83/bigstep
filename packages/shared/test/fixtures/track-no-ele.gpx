@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.0" creator="Altgerät" xmlns="http://www.topografix.com/GPX/1/0">
+  <trk>
+    <trkseg>
+      <trkpt lat="46.5197" lon="6.6323"/>
+      <trkpt lat="46.5211" lon="6.6349"/>
+    </trkseg>
+    <trkseg>
+      <trkpt lat="46.5234" lon="6.6371"/>
+      <trkpt lat="46.526" lon="6.64"/>
+    </trkseg>
+  </trk>
+</gpx>
