@@ -1,5 +1,13 @@
 # Changelog
 
+## Phase 5 – Routen-Editor, Snapping, Kennzahlen (2026-08-31)
+
+- `packages/shared`: `RoutingProvider`-Interface mit `BRouterProvider` (BRouter-Web-API, Profil `hiking-mountain` — am 2026-08-31 auf brouter.de verifiziert, BRouter 1.7.10; CORS offen; Timeout 5 s, bei Fehler Luftlinie mit `ok:false`) und `StraightLineProvider`; `concatSegments`; Wanderzeit-Formel `hikingTimeMin` (4.2 km/h, 300/500 Hm/h, grösserer Wert + halber kleinerer) mit drei Referenzfall-Tests; `wgs84ToLv95` (swisstopo-Näherungsformeln, < 2 m am Bern-Referenzpunkt). 10 neue Tests.
+- **profile.json-Erkenntnis:** akzeptiert nur `sr=2056/21781` — WGS84 wird mit HTTP 400 abgelehnt; darum LV95-Transformation clientseitig. Höhenabfrage debounced (500 ms nach Änderungsende), clientseitig auf 15 Requests/min gedrosselt, lange Routen auf ≤ 500 Stützpunkte ausgedünnt.
+- Desktop-Routen-Editor (`useRouteEditor` + MapView-Integration): Klick hängt Wegpunkt an (Segment via Routing), Klick auf die Linie fügt Punkt im Segment ein, Marker-Drag routet nur die zwei betroffenen Segmente neu (bei Drag-Ende), Rechtsklick löscht; Segment-Cache (gerundete Endpunkte) verhindert Requests bei Undo/Redo; Undo/Redo-Stack über Wegpunkt-Snapshots (30 Schritte); Luftlinien-/Fehlersegmente gestrichelt; Snapping-Schalter (persistiert in `settings.routing`); Mutationen laufen durch eine Queue, damit schnelle Klicks sich nicht überholen.
+- Kennzahlen-Leiste unten in der Karte (km, ↑ m, ↓ m, Wanderzeit) — im Editor live, sonst gespeicherte Werte; debounced PATCH (waypoints, geometry, bbox, Kennzahlen) mit Dedupe gegen redundante Writes; Editor übersteht Neuladen ohne Datenverlust (E2E verifiziert).
+- Browser-Fallstrick behoben: `this.fetchImpl = fetch` ruft fetch mit falschem `this` auf («Illegal invocation») — Wrapper-Funktion statt Direktzuweisung.
+
 ## Phase 4 – GPX-Import/-Export (2026-08-31)
 
 - `packages/shared`: GPX-Parser/-Serializer (`gpx.ts`, fast-xml-parser) für Tracks (1.0/1.1, mehrere Segmente werden aneinandergehängt) mit `<rte>`-Fallback; Geo-Helfer (`geo.ts`): Haversine-Distanz, bbox, Auf-/Abstieg aus GPX-Höhen (3-m-Schwelle gegen GPS-Rauschen). 12 neue Tests mit Fixtures (mit/ohne Höhen, nur Route, Fehlerfälle); Roundtrip parse→serialize→parse verlustfrei.

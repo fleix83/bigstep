@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AttributionControl,
   Map as MaplibreMap,
+  Marker,
   NavigationControl,
   setWorkerUrl,
   type GeoJSONSource,
@@ -22,6 +23,7 @@ import {
   type OverlayKey,
 } from '../lib/geo-layers'
 import { DEFAULT_MAP_STATE, parseMapState, type MapState } from '../lib/map-state'
+import type { RouteEditor } from '../hooks/useRouteEditor'
 
 // MapLibre sucht seinen Worker relativ zu import.meta.url; nach Vites
 // Prebundling zeigt das auf .vite/deps/, wo das Worker-File fehlt — die Karte
@@ -46,6 +48,8 @@ interface Props {
   visible: boolean
   /** Import-Vorschau: gestrichelte Linie, Karte fliegt auf deren bbox. */
   preview?: LineString | null
+  /** Aktiver Routen-Editor: Wegpunkt-Marker, Klick-/Drag-Interaktion. */
+  editor?: RouteEditor | null
 }
 
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
@@ -113,8 +117,17 @@ function buildStyle(state: MapState): StyleSpecification {
       id: 'active-tour-line',
       type: 'line',
       source: 'active-tour',
+      filter: ['!=', ['get', 'dashed'], true],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': '#2563eb', 'line-width': 3.5 },
+    },
+    {
+      // Luftlinien-Segmente (Snapping aus oder Routing fehlgeschlagen).
+      id: 'active-tour-dashed',
+      type: 'line',
+      source: 'active-tour',
+      filter: ['==', ['get', 'dashed'], true],
+      paint: { 'line-color': '#2563eb', 'line-width': 3, 'line-dasharray': [1.5, 1.5] },
     },
     {
       id: 'import-preview-line',
@@ -131,7 +144,7 @@ function buildStyle(state: MapState): StyleSpecification {
   return style
 }
 
-export function MapView({ tour, tours, visible, preview = null }: Props) {
+export function MapView({ tour, tours, visible, preview = null, editor = null }: Props) {
   const api = useApi()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MaplibreMap | null>(null)
@@ -191,6 +204,10 @@ export function MapView({ tour, tours, visible, preview = null }: Props) {
   const scheduleSaveRef = useRef(scheduleSave)
   scheduleSaveRef.current = scheduleSave
 
+  // Klick-Handler wird einmal registriert und liest den Editor über die Ref.
+  const editorRef = useRef(editor)
+  editorRef.current = editor
+
   // Karte GENAU EINMAL erzeugen, sobald der Startzustand steht. Wichtig:
   // keine Abhängigkeit auf `ui` selbst — sonst wird die Karte bei jedem
   // Toggle abgerissen und neu aufgebaut.
@@ -213,6 +230,27 @@ export function MapView({ tour, tours, visible, preview = null }: Props) {
     // zusätzlich auf sämtliche initialen Kacheln warten.
     map.on('style.load', () => setReady(true))
     map.on('moveend', () => scheduleSaveRef.current())
+    map.on('click', (e) => {
+      const ed = editorRef.current
+      if (!ed) return
+      const p: [number, number] = [
+        Math.round(e.lngLat.lng * 1e6) / 1e6,
+        Math.round(e.lngLat.lat * 1e6) / 1e6,
+      ]
+      // Klick auf ein bestehendes Segment fügt dort einen Wegpunkt ein,
+      // Klick auf freie Karte hängt einen Wegpunkt an.
+      const hits = map.queryRenderedFeatures(
+        [
+          [e.point.x - 6, e.point.y - 6],
+          [e.point.x + 6, e.point.y + 6],
+        ],
+        { layers: ['active-tour-line', 'active-tour-dashed'] }
+      )
+      const segIdx = hits.find((f) => typeof f.properties?.segIdx === 'number')?.properties
+        ?.segIdx as number | undefined
+      if (segIdx !== undefined) ed.insertOnSegment(segIdx, p)
+      else ed.addWaypoint(p)
+    })
     mapRef.current = map
     return () => {
       map.remove()
@@ -248,14 +286,62 @@ export function MapView({ tour, tours, visible, preview = null }: Props) {
     }
   }, [ui, scheduleSave])
 
-  // Aktive Route zeichnen.
+  // Aktive Route zeichnen: im Editor die Segmente (mit dashed-Markierung),
+  // sonst die gespeicherte Geometrie der Tour.
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
     const src = map.getSource('active-tour') as GeoJSONSource | undefined
+    if (editor) {
+      src?.setData(editor.segmentsFC)
+      return
+    }
     const feature = tour ? lineFeature(tour) : null
     src?.setData(feature ? { type: 'FeatureCollection', features: [feature] } : EMPTY_FC)
-  }, [tour, ready])
+  }, [tour, editor, ready])
+
+  // Wegpunkt-Marker im Editor: Drag verschiebt, Rechtsklick löscht.
+  const markersRef = useRef<Marker[]>([])
+  useEffect(() => {
+    const map = mapRef.current
+    for (const m of markersRef.current) m.remove()
+    markersRef.current = []
+    if (!map || !ready || !editor) return
+    editor.waypoints.forEach((wp, i) => {
+      const el = document.createElement('div')
+      const color =
+        i === 0 ? '#16a34a' : i === editor.waypoints.length - 1 ? '#dc2626' : '#2563eb'
+      el.style.cssText = `width:14px;height:14px;border-radius:50%;background:${color};border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:grab`
+      el.title = 'Ziehen zum Verschieben, Rechtsklick zum Löschen'
+      el.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault()
+        ev.stopPropagation()
+        editorRef.current?.deleteWaypoint(i)
+      })
+      const marker = new Marker({ element: el, draggable: true })
+        .setLngLat([wp[0], wp[1]])
+        .addTo(map)
+      marker.on('dragend', () => {
+        const ll = marker.getLngLat()
+        editorRef.current?.moveWaypoint(i, [
+          Math.round(ll.lng * 1e6) / 1e6,
+          Math.round(ll.lat * 1e6) / 1e6,
+        ])
+      })
+      markersRef.current.push(marker)
+    })
+    return () => {
+      for (const m of markersRef.current) m.remove()
+      markersRef.current = []
+    }
+  }, [editor, ready])
+
+  // Fadenkreuz-Cursor im Editor-Modus.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    map.getCanvas().style.cursor = editor ? 'crosshair' : ''
+  }, [editor])
 
   // Übrige Touren schwach anzeigen.
   useEffect(() => {
@@ -298,6 +384,9 @@ export function MapView({ tour, tours, visible, preview = null }: Props) {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready || !tour?.bbox) return
+    // Während des Editierens ändert sich die bbox durch jedes Auto-Save;
+    // die Kamera soll dem Nutzer dann nicht dazwischenfunken.
+    if (editorRef.current) return
     const [minLon, minLat, maxLon, maxLat] = tour.bbox
     map.fitBounds(
       [
@@ -365,7 +454,7 @@ export function MapView({ tour, tours, visible, preview = null }: Props) {
         </div>
       )}
 
-      {tour && !tour.geometry && (
+      {tour && !tour.geometry && !editor && (
         <div className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-md bg-gray-900/80 px-3 py-1.5 text-sm text-white shadow">
           Noch keine Route
         </div>

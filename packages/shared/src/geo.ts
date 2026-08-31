@@ -1,4 +1,4 @@
-import type { BBox, LineString } from './types'
+import type { BBox, LineString, LonLat } from './types'
 
 const EARTH_RADIUS_M = 6371000
 
@@ -72,4 +72,38 @@ export function elevationGainLoss(
     }
   }
   return { ascent_m: Math.round(ascent), descent_m: Math.round(descent) }
+}
+
+/**
+ * WGS84 → LV95 (EPSG:2056) mit den offiziellen swisstopo-Näherungsformeln
+ * («Näherungslösung», Genauigkeit ≈ 1 m — ausreichend für Höhenprofile).
+ * Nötig, weil api3.geo.admin.ch/rest/services/profile.json nur sr=2056/21781
+ * akzeptiert (sr=4326 wird mit HTTP 400 abgelehnt; am 2026-08-31 verifiziert).
+ */
+export function wgs84ToLv95([lon, lat]: LonLat): [number, number] {
+  const p = (lat * 3600 - 169028.66) / 10000
+  const l = (lon * 3600 - 26782.5) / 10000
+  const e =
+    2600072.37 + 211455.93 * l - 10938.51 * l * p - 0.36 * l * p * p - 44.54 * l ** 3
+  const n =
+    1200147.07 +
+    308807.95 * p +
+    3745.25 * l * l +
+    76.63 * p * p -
+    194.56 * l * l * p +
+    119.79 * p ** 3
+  return [Math.round(e * 100) / 100, Math.round(n * 100) / 100]
+}
+
+/**
+ * Wanderzeit nach der vereinfachten Formel der Schweizer Wanderwege (PRD F3):
+ * 4.2 km/h horizontal, 300 Hm/h Aufstieg, 500 Hm/h Abstieg;
+ * Gesamtzeit = grösserer Wert + halber kleinerer Wert. Ergebnis in Minuten.
+ */
+export function hikingTimeMin(distanceM: number, ascentM: number, descentM: number): number {
+  const horizontalMin = (distanceM / 1000 / 4.2) * 60
+  const verticalMin = (ascentM / 300) * 60 + (descentM / 500) * 60
+  const bigger = Math.max(horizontalMin, verticalMin)
+  const smaller = Math.min(horizontalMin, verticalMin)
+  return Math.round(bigger + smaller / 2)
 }

@@ -13,8 +13,15 @@ import { SettingsDialog } from './components/SettingsDialog'
 import { MapView } from './components/MapView'
 import { ImportDialog, type ImportCandidate } from './components/ImportDialog'
 import { useTours } from './hooks/useTours'
+import { useRouteEditor } from './hooks/useRouteEditor'
 
 type Tab = 'karte' | 'book'
+
+function formatDuration(min: number): string {
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  return h > 0 ? `${h} h ${m.toString().padStart(2, '0')} min` : `${m} min`
+}
 
 export default function App() {
   return (
@@ -35,6 +42,25 @@ function Shell() {
   const queryClient = useQueryClient()
   const { data: tours } = useTours()
   const selectedTour = tours?.find((t) => t.id === selectedId) ?? null
+  const [editing, setEditing] = useState(false)
+  const editor = useRouteEditor(selectedTour, editing && tab === 'karte')
+
+  const selectTour = (id: string | null) => {
+    setEditing(false)
+    setSelectedId(id)
+  }
+
+  // Kennzahlen: im Editor live, sonst die gespeicherten Werte der Tour.
+  const statsSource = editor
+    ? editor.stats
+    : selectedTour
+      ? {
+          distance_m: selectedTour.distance_m ?? 0,
+          ascent_m: selectedTour.ascent_m,
+          descent_m: selectedTour.descent_m,
+          duration_min: selectedTour.duration_min,
+        }
+      : null
 
   const closeImport = () => {
     setShowImport(false)
@@ -77,7 +103,7 @@ function Shell() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <TourList selectedId={selectedId} onSelect={setSelectedId} />
+        <TourList selectedId={selectedId} onSelect={selectTour} />
 
         <main className="flex min-w-0 flex-1 flex-col">
           <nav className="flex items-center border-b border-gray-200 bg-white">
@@ -131,7 +157,84 @@ function Shell() {
               tours={tours}
               visible={tab === 'karte'}
               preview={preview?.line ?? null}
+              editor={editor}
             />
+
+            {/* Editor-Toolbar */}
+            {tab === 'karte' && selectedTour && (
+              <div className="absolute left-14 top-2 z-10 flex items-center gap-1 rounded-lg border border-gray-200 bg-white/95 px-2 py-1.5 shadow-md">
+                {!editing ? (
+                  <button
+                    className="rounded px-2 py-1 text-sm font-medium text-blue-700 hover:bg-blue-50"
+                    onClick={() => setEditing(true)}
+                  >
+                    ✎ Route bearbeiten
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      className="rounded bg-blue-600 px-2 py-1 text-sm font-medium text-white hover:bg-blue-700"
+                      onClick={() => setEditing(false)}
+                    >
+                      ✓ Fertig
+                    </button>
+                    <button
+                      className="rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-30"
+                      title="Rückgängig"
+                      disabled={!editor?.canUndo}
+                      onClick={() => editor?.undo()}
+                    >
+                      ↶
+                    </button>
+                    <button
+                      className="rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-30"
+                      title="Wiederholen"
+                      disabled={!editor?.canRedo}
+                      onClick={() => editor?.redo()}
+                    >
+                      ↷
+                    </button>
+                    <label
+                      className="ml-1 flex cursor-pointer items-center gap-1.5 border-l border-gray-200 py-1 pl-2 pr-1 text-sm text-gray-700"
+                      title="Aus: neue Segmente als Luftlinie (gestrichelt)"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={editor?.snapping ?? true}
+                        onChange={(e) => editor?.setSnapping(e.target.checked)}
+                      />
+                      Snapping
+                    </label>
+                    {editor?.routingBusy && (
+                      <span className="px-1 text-xs text-gray-400">routet …</span>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Kennzahlen-Leiste (PRD F3) */}
+            {tab === 'karte' && statsSource && (statsSource.distance_m > 0 || editing) && (
+              <div className="absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-gray-200 bg-white/95 px-4 py-1.5 text-sm text-gray-800 shadow-md">
+                {(statsSource.distance_m / 1000).toFixed(1)} km
+                <span className="mx-2 text-gray-300">·</span>↑{' '}
+                {statsSource.ascent_m ?? '–'} m
+                <span className="mx-2 text-gray-300">·</span>↓{' '}
+                {statsSource.descent_m ?? '–'} m
+                <span className="mx-2 text-gray-300">·</span>
+                {statsSource.duration_min !== null
+                  ? formatDuration(statsSource.duration_min)
+                  : '–'}
+              </div>
+            )}
+
+            {editing && (
+              <div className="absolute bottom-16 left-1/2 z-10 -translate-x-1/2 rounded bg-gray-900/75 px-3 py-1 text-xs text-white">
+                Klick: Punkt anhängen · Klick auf Linie: Punkt einfügen · Ziehen:
+                verschieben · Rechtsklick: löschen
+              </div>
+            )}
+
             {tab === 'book' && (
               <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-100 text-sm text-gray-500">
                 Book folgt in Phase 6
