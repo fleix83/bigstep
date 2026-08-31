@@ -1,0 +1,21 @@
+node_modules/
+dist/
+build/
+coverage/
+
+# Secrets – niemals committen
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+
+# Tauri / Rust
+apps/desktop/src-tauri/target/
+
+# Wrangler
+.wrangler/
+
+# OS / Editor
+.DS_Store
+*.log

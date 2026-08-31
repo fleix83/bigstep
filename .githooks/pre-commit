@@ -1,0 +1,20 @@
+#!/bin/sh
+# Pre-commit: Secrets-Scan mit gitleaks (PRD §7.4 / PLAN Phase 0.5).
+# Aktivieren mit: git config core.hooksPath .githooks
+
+GITLEAKS="$(command -v gitleaks || echo "$HOME/.local/bin/gitleaks")"
+
+if [ ! -x "$GITLEAKS" ]; then
+  echo "WARNUNG: gitleaks nicht gefunden – Secrets-Scan übersprungen." >&2
+  echo "Installation: https://github.com/gitleaks/gitleaks/releases" >&2
+  exit 0
+fi
+
+"$GITLEAKS" git --pre-commit --staged --redact --no-banner
+status=$?
+if [ $status -ne 0 ]; then
+  echo "" >&2
+  echo "Commit abgebrochen: gitleaks hat mögliche Secrets gefunden." >&2
+  exit $status
+fi
+exit 0

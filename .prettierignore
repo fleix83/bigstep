@@ -1,0 +1,7 @@
+node_modules
+dist
+coverage
+drizzle/migrations
+pnpm-lock.yaml
+apps/desktop/src-tauri/target
+.wrangler

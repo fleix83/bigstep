@@ -1,0 +1,32 @@
+{
+  "name": "tourenbuch",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "pnpm -r run test",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r run typecheck",
+    "drizzle:generate": "drizzle-kit generate",
+    "drizzle:migrate": "drizzle-kit migrate",
+    "secrets:scan": "gitleaks git --no-banner --redact ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@neondatabase/serverless": "catalog:",
+    "dotenv": "^17.4.2",
+    "drizzle-kit": "catalog:",
+    "drizzle-orm": "catalog:",
+    "eslint": "^10.9.1",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.6",
+    "typescript": "catalog:",
+    "typescript-eslint": "^8.69.0"
+  }
+}
