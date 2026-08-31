@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import { and, asc, desc, eq, isNull, max, sql } from 'drizzle-orm'
 import { cards, settings, tours } from '@tourenbuch/shared/db'
 import {
@@ -14,6 +15,10 @@ import { ApiError, uuidParam, validate } from './errors'
 import type { Env } from './env'
 
 const app = new Hono<{ Bindings: Env }>()
+
+// Desktop (Tauri-Webview bzw. Vite-Dev) läuft auf anderer Origin als der Worker;
+// die Daten schützt der Bearer-Token, nicht die Origin. PWA wird same-origin ausgeliefert.
+app.use('/api/*', cors())
 
 // ---------------------------------------------------------------------------
 // Auth: alle /api-Routen hinter statischem Bearer-Token (PRD §7.4)
