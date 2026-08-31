@@ -1,5 +1,14 @@
 # Changelog
 
+## Phase 6 – Book-Reiter (2026-08-31)
+
+- API: Images-Endpunkte (`GET /api/tours/:id/images`, `POST/PATCH/DELETE /api/images`) — nur Metadaten, kein Bytea; Duplikat-Import (gleiche sha256) liefert die bestehende Zeile (200) statt einer zweiten. 6 neue API-Tests (jetzt 27).
+- **Pipeline-Entscheid (PLAN 6.3):** Verarbeitung im Webview (Canvas + exifr) statt Rust — gleicher Code für Tauri-Webview, Dev-Browser und spätere PWA, keine nativen Encoder-Abhängigkeiten. SHA-256 des Originals als Identität, EXIF (GPS + DateTimeOriginal) via exifr, EXIF-Rotation beim Decodieren, Ableitungen 2000 px + 300 px als WebP (Chromium). **Abweichung:** WKWebView (Tauri macOS) encodiert kein WebP → JPEG-Ableitungen als Fallback; HEIC wird per lazy geladenem heic2any (libheif-wasm) vorkonvertiert.
+- Ablage der Ableitungen: Tauri-App im App-Data-Ordner `images/` (plugin-fs, Anzeige übers Asset-Protokoll), Dev-Browser/PWA im OPFS mit Blob-URLs; Dateiname = `sha256_display|thumb.ext`.
+- BookView: Card-Grid («+ Neue Card», Titel/Datum inline, Markdown-Notizen mit Klick-zum-Bearbeiten und gerenderter Vorschau via marked + DOMPurify), Cards-Reihenfolge per Drag-and-drop (`POST /api/cards/reorder`, optimistisch), Card-Löschen mit Bestätigung, Bild-Upload per Dateidialog und Drag-and-drop, Lightbox.
+- Foto-Pins: Bilder mit GPS erscheinen als Thumb-Marker auf der Karte; Klick öffnet den Book-Reiter und scrollt zur Card.
+- E2E verifiziert: EXIF-GPS/-Datum korrekt extrahiert (Pins sitzen exakt), 10 Bilder à 5 MB am Stück importiert bei bedienbarer UI, Cards samt Bildern nach Reload wieder da (F4-Akzeptanz).
+
 ## Phase 5 – Routen-Editor, Snapping, Kennzahlen (2026-08-31)
 
 - `packages/shared`: `RoutingProvider`-Interface mit `BRouterProvider` (BRouter-Web-API, Profil `hiking-mountain` — am 2026-08-31 auf brouter.de verifiziert, BRouter 1.7.10; CORS offen; Timeout 5 s, bei Fehler Luftlinie mit `ok:false`) und `StraightLineProvider`; `concatSegments`; Wanderzeit-Formel `hikingTimeMin` (4.2 km/h, 300/500 Hm/h, grösserer Wert + halber kleinerer) mit drei Referenzfall-Tests; `wgs84ToLv95` (swisstopo-Näherungsformeln, < 2 m am Bern-Referenzpunkt). 10 neue Tests.

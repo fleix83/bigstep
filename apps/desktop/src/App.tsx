@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   elevationGainLoss,
@@ -12,8 +12,12 @@ import { TourList } from './components/TourList'
 import { SettingsDialog } from './components/SettingsDialog'
 import { MapView } from './components/MapView'
 import { ImportDialog, type ImportCandidate } from './components/ImportDialog'
+import { BookView } from './components/BookView'
 import { useTours } from './hooks/useTours'
 import { useRouteEditor } from './hooks/useRouteEditor'
+import { useTourImages } from './hooks/useCards'
+import { findDerivatives } from './lib/image-store'
+import type { PhotoPin } from './components/MapView'
 
 type Tab = 'karte' | 'book'
 
@@ -44,6 +48,31 @@ function Shell() {
   const selectedTour = tours?.find((t) => t.id === selectedId) ?? null
   const [editing, setEditing] = useState(false)
   const editor = useRouteEditor(selectedTour, editing && tab === 'karte')
+  const [highlightCardId, setHighlightCardId] = useState<string | null>(null)
+
+  // Foto-Pins: Bilder mit GPS der aktiven Tour, Thumb-URLs lokal auflösen.
+  const { data: tourImages } = useTourImages(selectedId)
+  const [photoPins, setPhotoPins] = useState<PhotoPin[]>([])
+  useEffect(() => {
+    let alive = true
+    const withGps = (tourImages ?? []).filter(
+      (i) => i.lat !== null && i.lon !== null
+    )
+    void Promise.all(
+      withGps.map(async (i) => ({
+        imageId: i.id,
+        cardId: i.card_id,
+        lon: i.lon!,
+        lat: i.lat!,
+        thumbUrl: (await findDerivatives(i.sha256))?.thumb ?? null,
+      }))
+    ).then((pins) => {
+      if (alive) setPhotoPins(pins)
+    })
+    return () => {
+      alive = false
+    }
+  }, [tourImages])
 
   const selectTour = (id: string | null) => {
     setEditing(false)
@@ -158,6 +187,11 @@ function Shell() {
               visible={tab === 'karte'}
               preview={preview?.line ?? null}
               editor={editor}
+              photos={photoPins}
+              onPhotoClick={(cardId) => {
+                setTab('book')
+                setHighlightCardId(cardId)
+              }}
             />
 
             {/* Editor-Toolbar */}
@@ -236,8 +270,18 @@ function Shell() {
             )}
 
             {tab === 'book' && (
-              <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-100 text-sm text-gray-500">
-                Book folgt in Phase 6
+              <div className="absolute inset-0 z-20 bg-gray-50">
+                {selectedTour ? (
+                  <BookView
+                    tourId={selectedTour.id}
+                    highlightCardId={highlightCardId}
+                    onHighlightDone={() => setHighlightCardId(null)}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-sm text-gray-500">
+                    Zuerst links eine Tour wählen.
+                  </div>
+                )}
               </div>
             )}
           </div>

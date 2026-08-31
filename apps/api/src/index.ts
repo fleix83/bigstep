@@ -1,11 +1,13 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { and, asc, desc, eq, isNull, max, sql } from 'drizzle-orm'
-import { cards, settings, tours } from '@tourenbuch/shared/db'
+import { cards, images, settings, tours } from '@tourenbuch/shared/db'
 import {
   cardCreateSchema,
   cardUpdateSchema,
   cardsReorderSchema,
+  imageCreateSchema,
+  imageUpdateSchema,
   settingPutSchema,
   tourCreateSchema,
   tourUpdateSchema,
@@ -225,6 +227,61 @@ app.post('/api/cards/reorder', async (c) => {
     .where(and(eq(cards.tour_id, body.tour_id), isNull(cards.deleted_at)))
     .orderBy(asc(cards.position), asc(cards.created_at))
   return c.json(rows.map(stripDeleted))
+})
+
+// ---------------------------------------------------------------------------
+// Images (Metadaten; die Ableitungen liegen in v1 lokal beim Client, ab
+// Phase 8 in R2 – kein Bytea in Postgres, PRD F4)
+// ---------------------------------------------------------------------------
+
+app.get('/api/tours/:id/images', async (c) => {
+  const tourId = idParam(c.req.param('id'))
+  const db = getDb(c.env)
+  await requireTour(db, tourId)
+  const rows = await db
+    .select({ image: images })
+    .from(images)
+    .innerJoin(cards, eq(images.card_id, cards.id))
+    .where(and(eq(cards.tour_id, tourId), isNull(cards.deleted_at)))
+    .orderBy(asc(images.created_at))
+  return c.json(rows.map((r) => r.image))
+})
+
+app.post('/api/images', async (c) => {
+  const body = validate(imageCreateSchema, await readJson(c))
+  const db = getDb(c.env)
+  const [card] = await db
+    .select({ id: cards.id })
+    .from(cards)
+    .where(and(eq(cards.id, body.card_id), isNull(cards.deleted_at)))
+  if (!card) throw new ApiError(404, 'not_found', 'Card nicht gefunden')
+  // Duplikat-Import (gleiche sha256) legt keine zweite Zeile an, sondern
+  // liefert die bestehende zurück – der Client verknüpft nur (PRD F4).
+  const [existing] = await db.select().from(images).where(eq(images.sha256, body.sha256))
+  if (existing) return c.json(existing, 200)
+  const [row] = await db.insert(images).values(body).returning()
+  if (!row) throw new ApiError(500, 'internal', 'Insert lieferte keine Zeile')
+  return c.json(row, 201)
+})
+
+app.patch('/api/images/:id', async (c) => {
+  const id = idParam(c.req.param('id'))
+  const body = validate(imageUpdateSchema, await readJson(c))
+  const db = getDb(c.env)
+  const [row] = await db.update(images).set(body).where(eq(images.id, id)).returning()
+  if (!row) throw new ApiError(404, 'not_found', 'Bild nicht gefunden')
+  return c.json(row)
+})
+
+app.delete('/api/images/:id', async (c) => {
+  const id = idParam(c.req.param('id'))
+  const db = getDb(c.env)
+  const [row] = await db
+    .delete(images)
+    .where(eq(images.id, id))
+    .returning({ id: images.id })
+  if (!row) throw new ApiError(404, 'not_found', 'Bild nicht gefunden')
+  return c.body(null, 204)
 })
 
 // ---------------------------------------------------------------------------

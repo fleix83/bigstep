@@ -50,6 +50,17 @@ interface Props {
   preview?: LineString | null
   /** Aktiver Routen-Editor: Wegpunkt-Marker, Klick-/Drag-Interaktion. */
   editor?: RouteEditor | null
+  /** Foto-Pins (Bilder mit GPS) der aktiven Tour. */
+  photos?: PhotoPin[]
+  onPhotoClick?: (cardId: string) => void
+}
+
+export interface PhotoPin {
+  imageId: string
+  cardId: string
+  lon: number
+  lat: number
+  thumbUrl: string | null
 }
 
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
@@ -144,7 +155,15 @@ function buildStyle(state: MapState): StyleSpecification {
   return style
 }
 
-export function MapView({ tour, tours, visible, preview = null, editor = null }: Props) {
+export function MapView({
+  tour,
+  tours,
+  visible,
+  preview = null,
+  editor = null,
+  photos = [],
+  onPhotoClick,
+}: Props) {
   const api = useApi()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MaplibreMap | null>(null)
@@ -335,6 +354,43 @@ export function MapView({ tour, tours, visible, preview = null, editor = null }:
       markersRef.current = []
     }
   }, [editor, ready])
+
+  // Foto-Pins: Bilder mit GPS als Marker; Klick öffnet die zugehörige Card.
+  const photoMarkersRef = useRef<Marker[]>([])
+  const onPhotoClickRef = useRef(onPhotoClick)
+  onPhotoClickRef.current = onPhotoClick
+  useEffect(() => {
+    const map = mapRef.current
+    for (const m of photoMarkersRef.current) m.remove()
+    photoMarkersRef.current = []
+    if (!map || !ready || photos.length === 0) return
+    for (const pin of photos) {
+      const el = document.createElement('div')
+      el.style.cssText =
+        'width:30px;height:30px;border-radius:6px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45);cursor:pointer;overflow:hidden;background:#e5e7eb;display:flex;align-items:center;justify-content:center'
+      if (pin.thumbUrl) {
+        const img = document.createElement('img')
+        img.src = pin.thumbUrl
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover'
+        el.appendChild(img)
+      } else {
+        el.textContent = '📷'
+      }
+      el.title = 'Card öffnen'
+      el.addEventListener('click', (ev) => {
+        ev.stopPropagation()
+        onPhotoClickRef.current?.(pin.cardId)
+      })
+      const marker = new Marker({ element: el, anchor: 'bottom' })
+        .setLngLat([pin.lon, pin.lat])
+        .addTo(map)
+      photoMarkersRef.current.push(marker)
+    }
+    return () => {
+      for (const m of photoMarkersRef.current) m.remove()
+      photoMarkersRef.current = []
+    }
+  }, [photos, ready])
 
   // Fadenkreuz-Cursor im Editor-Modus.
   useEffect(() => {

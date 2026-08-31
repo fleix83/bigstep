@@ -186,6 +186,77 @@ describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
     })
   })
 
+  describe('Images', () => {
+    let tourId: string
+    let cardId: string
+    let imageId: string
+    const SHA = 'a'.repeat(64)
+
+    beforeAll(async () => {
+      const tour = (await (
+        await req('POST', '/api/tours', { name: 'Bilder-Testtour' })
+      ).json()) as Tour
+      tourId = tour.id
+      const card = (await (
+        await req('POST', '/api/cards', { tour_id: tourId, title: 'Mit Bild' })
+      ).json()) as Card
+      cardId = card.id
+    })
+
+    it('POST /api/images legt Metadaten an (201)', async () => {
+      const res = await req('POST', '/api/images', {
+        card_id: cardId,
+        sha256: SHA,
+        lat: 47.572,
+        lon: 7.687,
+        taken_at: '2026-08-30T10:15:00+02:00',
+      })
+      expect(res.status).toBe(201)
+      const img = (await res.json()) as { id: string; upload_state: string; lat: number }
+      expect(img.upload_state).toBe('pending')
+      expect(img.lat).toBeCloseTo(47.572)
+      imageId = img.id
+    })
+
+    it('Duplikat (gleiche sha256) liefert bestehende Zeile mit 200', async () => {
+      const res = await req('POST', '/api/images', { card_id: cardId, sha256: SHA })
+      expect(res.status).toBe(200)
+      expect(((await res.json()) as { id: string }).id).toBe(imageId)
+    })
+
+    it('GET /api/tours/:id/images liefert die Bilder der Tour', async () => {
+      const res = await req('GET', `/api/tours/${tourId}/images`)
+      expect(res.status).toBe(200)
+      const rows = (await res.json()) as { id: string }[]
+      expect(rows.map((r) => r.id)).toEqual([imageId])
+    })
+
+    it('PATCH /api/images/:id setzt upload_state', async () => {
+      const res = await req('PATCH', `/api/images/${imageId}`, { upload_state: 'uploaded' })
+      expect(res.status).toBe(200)
+      expect(((await res.json()) as { upload_state: string }).upload_state).toBe('uploaded')
+    })
+
+    it('POST für unbekannte Card → 404; kaputte sha256 → 400', async () => {
+      const notFound = await req('POST', '/api/images', {
+        card_id: '00000000-0000-4000-8000-000000000000',
+        sha256: 'b'.repeat(64),
+      })
+      expect(notFound.status).toBe(404)
+      const invalid = await req('POST', '/api/images', { card_id: cardId, sha256: 'zu-kurz' })
+      expect(invalid.status).toBe(400)
+    })
+
+    it('DELETE /api/images/:id entfernt die Zeile', async () => {
+      const res = await req('DELETE', `/api/images/${imageId}`)
+      expect(res.status).toBe(204)
+      const rows = (await (
+        await req('GET', `/api/tours/${tourId}/images`)
+      ).json()) as unknown[]
+      expect(rows).toHaveLength(0)
+    })
+  })
+
   describe('Settings', () => {
     it('PUT + GET Roundtrip, Upsert überschreibt', async () => {
       await req('PUT', '/api/settings/map', { value: { layers: ['wanderwege'], zoom: 12 } })

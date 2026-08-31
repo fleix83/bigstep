@@ -1,10 +1,14 @@
 import { z } from 'zod'
 import {
   cardSchema,
+  imageSchema,
   tourSchema,
   type Card,
   type CardCreate,
   type CardUpdate,
+  type Image,
+  type ImageCreate,
+  type ImageUpdate,
   type Tour,
   type TourCreate,
   type TourUpdate,
@@ -95,6 +99,20 @@ export class ApiClient {
       tour_id: tourId,
       ids,
     })
+  }
+
+  // Images
+  listTourImages(tourId: string): Promise<Image[]> {
+    return this.request('GET', `/api/tours/${tourId}/images`, z.array(imageSchema))
+  }
+  createImage(data: ImageCreate): Promise<Image> {
+    return this.request('POST', '/api/images', imageSchema, data)
+  }
+  updateImage(id: string, data: ImageUpdate): Promise<Image> {
+    return this.request('PATCH', `/api/images/${id}`, imageSchema, data)
+  }
+  deleteImage(id: string): Promise<void> {
+    return this.request('DELETE', `/api/images/${id}`, null)
   }
 
   // Settings
