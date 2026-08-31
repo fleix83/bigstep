@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ApiProvider, useApiConfig } from './lib/api'
 import { TourList } from './components/TourList'
 import { SettingsDialog } from './components/SettingsDialog'
+import { MapView } from './components/MapView'
 import { useTours } from './hooks/useTours'
 
 type Tab = 'karte' | 'book'
@@ -60,13 +61,11 @@ function Shell() {
             )}
           </nav>
 
-          <div className="min-h-0 flex-1">
-            {tab === 'karte' ? (
-              <div className="flex h-full items-center justify-center bg-gray-100 text-sm text-gray-500">
-                Karte folgt in Phase 3
-              </div>
-            ) : (
-              <div className="flex h-full items-center justify-center bg-gray-100 text-sm text-gray-500">
+          <div className="relative min-h-0 flex-1">
+            {/* Karte bleibt beim Reiterwechsel gemountet, damit Position und Layer erhalten bleiben. */}
+            <MapView tour={selectedTour} tours={tours} visible={tab === 'karte'} />
+            {tab === 'book' && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-100 text-sm text-gray-500">
                 Book folgt in Phase 6
               </div>
             )}
