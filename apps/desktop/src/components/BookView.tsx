@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import type { Card, Image } from '@tourenbuch/shared'
@@ -20,13 +20,38 @@ function renderMarkdown(md: string): string {
   return DOMPurify.sanitize(marked.parse(md, { async: false, gfm: true }))
 }
 
+/** Display-/Thumb-URLs für eine Bildliste auflösen (lokal oder aus R2). */
+function useImageUrls(images: Image[]) {
+  const api = useApi()
+  const [urls, setUrls] = useState<Record<string, DerivativeUrls | null>>({})
+  const key = images.map((i) => i.id).join(',')
+  useEffect(() => {
+    let alive = true
+    void Promise.all(
+      images.map(async (img) => [img.id, await resolveImageUrls(img, api)] as const)
+    ).then((entries) => {
+      if (alive) setUrls(Object.fromEntries(entries))
+    })
+    return () => {
+      alive = false
+    }
+    // key repräsentiert die Bildliste; images selbst wechselt die Identität pro Fetch.
+  }, [key, api])
+  return urls
+}
+
+interface ViewboxState {
+  cardId: string
+  index: number
+}
+
 export function BookView({ tourId, highlightCardId, onHighlightDone, readOnly = false }: Props) {
   const { data: cards, isLoading } = useCards(tourId)
   const { data: images } = useTourImages(tourId)
   const mutations = useCardMutations(tourId)
   const [deleteCandidate, setDeleteCandidate] = useState<Card | null>(null)
   const [imageDeleteCandidate, setImageDeleteCandidate] = useState<Image | null>(null)
-  const [lightbox, setLightbox] = useState<string | null>(null)
+  const [viewbox, setViewbox] = useState<ViewboxState | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
 
   // Zu markierter Card scrollen (Foto-Pin-Klick).
@@ -63,53 +88,80 @@ export function BookView({ tourId, highlightCardId, onHighlightDone, readOnly = 
     imagesByCard.set(img.card_id, list)
   }
 
+  const viewboxImages = viewbox ? (imagesByCard.get(viewbox.cardId) ?? []) : []
+
   return (
-    <div className="h-full overflow-y-auto bg-gray-50 p-4">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-          Book
-        </h2>
+    <div className="h-full overflow-y-auto bg-gray-100 p-4 md:p-6">
+      <div className="mb-5 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Book</h2>
         {!readOnly && (
-          <button
-            className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            disabled={mutations.createCard.isPending}
-            onClick={() => mutations.createCard.mutate()}
-          >
-            + Neue Card
-          </button>
+          <div className="flex gap-2">
+            <button
+              className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              disabled={mutations.createCard.isPending}
+              onClick={() => mutations.createCard.mutate('text')}
+            >
+              + Text
+            </button>
+            <button
+              className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              disabled={mutations.createCard.isPending}
+              onClick={() => mutations.createCard.mutate('images')}
+            >
+              + Bilder
+            </button>
+          </div>
         )}
       </div>
 
       {isLoading && <p className="text-sm text-gray-500">Lade Cards …</p>}
       {cards && cards.length === 0 && (
         <p className="text-sm text-gray-500">
-          {readOnly ? 'Noch keine Cards.' : 'Noch keine Cards – mit «+ Neue Card» beginnen.'}
+          {readOnly
+            ? 'Noch keine Kacheln.'
+            : 'Noch keine Kacheln – erstelle eine Text- oder Bilder-Kachel.'}
         </p>
       )}
 
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
-        {cards?.map((card) => (
-          <CardItem
-            key={card.id}
-            card={card}
-            readOnly={readOnly}
-            images={imagesByCard.get(card.id) ?? []}
-            mutations={mutations}
-            onDelete={() => setDeleteCandidate(card)}
-            onDeleteImage={setImageDeleteCandidate}
-            onOpenImage={setLightbox}
-            dragging={dragId === card.id}
-            onDragStart={() => setDragId(card.id)}
-            onDragEnd={() => setDragId(null)}
-            onDropOn={() => handleDrop(card.id)}
-          />
-        ))}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        {cards?.map((card) =>
+          card.kind === 'images' ? (
+            <ImagesCard
+              key={card.id}
+              card={card}
+              images={imagesByCard.get(card.id) ?? []}
+              mutations={mutations}
+              readOnly={readOnly}
+              onDelete={() => setDeleteCandidate(card)}
+              onDeleteImage={setImageDeleteCandidate}
+              onOpenViewbox={(index) => setViewbox({ cardId: card.id, index })}
+              dragging={dragId === card.id}
+              onDragStart={() => setDragId(card.id)}
+              onDragEnd={() => setDragId(null)}
+              onDropOn={() => handleDrop(card.id)}
+            />
+          ) : (
+            <TextCard
+              key={card.id}
+              card={card}
+              mutations={mutations}
+              readOnly={readOnly}
+              onDelete={() => setDeleteCandidate(card)}
+              dragging={dragId === card.id}
+              onDragStart={() => setDragId(card.id)}
+              onDragEnd={() => setDragId(null)}
+              onDropOn={() => handleDrop(card.id)}
+            />
+          )
+        )}
       </div>
 
       {deleteCandidate && (
         <ConfirmDialog
-          title="Card löschen?"
-          message={`«${deleteCandidate.title || 'Ohne Titel'}» wird samt Bildern gelöscht.`}
+          title="Kachel löschen?"
+          message={`«${deleteCandidate.title || 'Ohne Titel'}» wird ${
+            deleteCandidate.kind === 'images' ? 'samt Bildern ' : ''
+          }gelöscht.`}
           onConfirm={() => {
             mutations.deleteCard.mutate(deleteCandidate.id)
             setDeleteCandidate(null)
@@ -121,7 +173,7 @@ export function BookView({ tourId, highlightCardId, onHighlightDone, readOnly = 
       {imageDeleteCandidate && (
         <ConfirmDialog
           title="Bild entfernen?"
-          message="Das Bild wird aus der Card entfernt und die lokale Ableitung gelöscht."
+          message="Das Bild wird aus der Kachel entfernt und die Ableitungen gelöscht."
           onConfirm={() => {
             mutations.deleteImage.mutate(imageDeleteCandidate)
             setImageDeleteCandidate(null)
@@ -130,52 +182,107 @@ export function BookView({ tourId, highlightCardId, onHighlightDone, readOnly = 
         />
       )}
 
-      {lightbox && (
-        <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 p-8"
-          onClick={() => setLightbox(null)}
-        >
-          <img src={lightbox} className="max-h-full max-w-full rounded shadow-2xl" />
-        </div>
+      {viewbox && viewboxImages.length > 0 && (
+        <Viewbox
+          images={viewboxImages}
+          index={Math.min(viewbox.index, viewboxImages.length - 1)}
+          onNavigate={(index) => setViewbox({ ...viewbox, index })}
+          onClose={() => setViewbox(null)}
+        />
       )}
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
+// Gemeinsame Kopfzeile (Drag-Handle, Datum, Löschen)
+// ---------------------------------------------------------------------------
 
-interface CardItemProps {
+interface HeaderProps {
   card: Card
   readOnly: boolean
-  images: Image[]
   mutations: ReturnType<typeof useCardMutations>
   onDelete: () => void
-  onDeleteImage: (img: Image) => void
-  onOpenImage: (url: string) => void
+  onDragStart: () => void
+  onDragEnd: () => void
+}
+
+function CardHeader({ card, readOnly, mutations, onDelete, onDragStart, onDragEnd }: HeaderProps) {
+  return (
+    <div
+      className={`flex items-center gap-2 px-4 pt-3 ${readOnly ? '' : 'cursor-grab'}`}
+      draggable={!readOnly}
+      onDragStart={
+        readOnly
+          ? undefined
+          : (e) => {
+              e.dataTransfer.effectAllowed = 'move'
+              onDragStart()
+            }
+      }
+      onDragEnd={readOnly ? undefined : onDragEnd}
+      title={readOnly ? undefined : 'Ziehen zum Umsortieren'}
+    >
+      {!readOnly && <span className="text-gray-300">⠿</span>}
+      <span className="flex-1" />
+      {readOnly ? (
+        card.taken_at && (
+          <span className="text-xs text-gray-400">{card.taken_at.slice(0, 10)}</span>
+        )
+      ) : (
+        <input
+          type="date"
+          className="bg-transparent text-xs text-gray-400 outline-none"
+          defaultValue={card.taken_at ? card.taken_at.slice(0, 10) : ''}
+          onChange={(e) => {
+            const v = e.target.value
+            mutations.updateCard.mutate({
+              id: card.id,
+              data: { taken_at: v ? `${v}T12:00:00+00:00` : null },
+            })
+          }}
+        />
+      )}
+      {!readOnly && (
+        <button
+          className="hidden rounded px-1 text-gray-400 hover:bg-red-100 hover:text-red-600 group-hover:block"
+          title="Kachel löschen"
+          onClick={onDelete}
+        >
+          🗑
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Text-Kachel: grosse Überschrift + Markdown (Fliesstext, Bulletpoints)
+// ---------------------------------------------------------------------------
+
+interface TextCardProps {
+  card: Card
+  mutations: ReturnType<typeof useCardMutations>
+  readOnly: boolean
+  onDelete: () => void
   dragging: boolean
   onDragStart: () => void
   onDragEnd: () => void
   onDropOn: () => void
 }
 
-function CardItem({
+function TextCard({
   card,
-  readOnly,
-  images,
   mutations,
+  readOnly,
   onDelete,
-  onDeleteImage,
-  onOpenImage,
   dragging,
   onDragStart,
   onDragEnd,
   onDropOn,
-}: CardItemProps) {
+}: TextCardProps) {
   const [editingBody, setEditingBody] = useState(false)
   const [bodyDraft, setBodyDraft] = useState(card.body_md ?? '')
-  const [dragOver, setDragOver] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
-  const uploading = mutations.addImages.isPending && mutations.addImages.variables?.cardId === card.id
 
   const saveBody = () => {
     setEditingBody(false)
@@ -183,6 +290,128 @@ function CardItem({
       mutations.updateCard.mutate({ id: card.id, data: { body_md: bodyDraft || null } })
     }
   }
+
+  return (
+    <div
+      id={`card-${card.id}`}
+      className={`group flex flex-col rounded-xl bg-white shadow-sm transition ${
+        dragging ? 'opacity-40' : ''
+      }`}
+      onDragOver={readOnly ? undefined : (e) => e.preventDefault()}
+      onDrop={
+        readOnly
+          ? undefined
+          : (e) => {
+              e.preventDefault()
+              onDropOn()
+            }
+      }
+    >
+      <CardHeader
+        card={card}
+        readOnly={readOnly}
+        mutations={mutations}
+        onDelete={onDelete}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+      />
+
+      <div className="flex-1 px-6 pb-6 pt-2 md:px-8">
+        {readOnly ? (
+          <h3 className="mb-4 text-2xl font-semibold text-gray-900 md:text-3xl">
+            {card.title || 'Ohne Titel'}
+          </h3>
+        ) : (
+          <input
+            className="mb-4 w-full bg-transparent text-2xl font-semibold text-gray-900 outline-none placeholder:text-gray-300 md:text-3xl"
+            placeholder="Überschrift …"
+            defaultValue={card.title ?? ''}
+            onBlur={(e) => {
+              const v = e.target.value.trim()
+              if (v !== (card.title ?? '')) {
+                mutations.updateCard.mutate({ id: card.id, data: { title: v || null } })
+              }
+            }}
+          />
+        )}
+
+        {editingBody && !readOnly ? (
+          <textarea
+            autoFocus
+            className="h-48 w-full resize-y rounded border border-blue-300 p-3 font-mono text-sm outline-none"
+            value={bodyDraft}
+            onChange={(e) => setBodyDraft(e.target.value)}
+            onBlur={saveBody}
+            placeholder={'Fliesstext …\n\n- Bulletpoints\n- gehen auch'}
+          />
+        ) : (
+          <div
+            className={`prose max-w-none text-gray-800 [&_a]:text-blue-600 [&_li]:my-0.5 [&_ul]:list-disc [&_ul]:pl-5 ${
+              readOnly ? '' : 'cursor-text'
+            }`}
+            title={readOnly ? undefined : 'Klicken zum Bearbeiten'}
+            onClick={
+              readOnly
+                ? undefined
+                : () => {
+                    setBodyDraft(card.body_md ?? '')
+                    setEditingBody(true)
+                  }
+            }
+            dangerouslySetInnerHTML={{
+              __html: card.body_md
+                ? renderMarkdown(card.body_md)
+                : readOnly
+                  ? ''
+                  : '<span class="text-gray-400">Text hinzufügen …</span>',
+            }}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Bilder-Kachel: ein Bild gross, Thumbnails darunter, Untertitel pro Bild
+// ---------------------------------------------------------------------------
+
+interface ImagesCardProps {
+  card: Card
+  images: Image[]
+  mutations: ReturnType<typeof useCardMutations>
+  readOnly: boolean
+  onDelete: () => void
+  onDeleteImage: (img: Image) => void
+  onOpenViewbox: (index: number) => void
+  dragging: boolean
+  onDragStart: () => void
+  onDragEnd: () => void
+  onDropOn: () => void
+}
+
+function ImagesCard({
+  card,
+  images,
+  mutations,
+  readOnly,
+  onDelete,
+  onDeleteImage,
+  onOpenViewbox,
+  dragging,
+  onDragStart,
+  onDragEnd,
+  onDropOn,
+}: ImagesCardProps) {
+  const [activeIdx, setActiveIdx] = useState(0)
+  const [dragOver, setDragOver] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const urls = useImageUrls(images)
+  const uploading =
+    mutations.addImages.isPending && mutations.addImages.variables?.cardId === card.id
+
+  const active = images[Math.min(activeIdx, Math.max(images.length - 1, 0))]
+  const activeUrls = active ? urls[active.id] : null
 
   const uploadFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return
@@ -192,9 +421,9 @@ function CardItem({
   return (
     <div
       id={`card-${card.id}`}
-      className={`group flex flex-col rounded-lg border bg-white shadow-sm transition ${
+      className={`group flex flex-col rounded-xl bg-white shadow-sm transition ${
         dragging ? 'opacity-40' : ''
-      } ${dragOver ? 'border-blue-400 bg-blue-50/50' : 'border-gray-200'}`}
+      } ${dragOver ? 'ring-2 ring-blue-400' : ''}`}
       onDragOver={
         readOnly
           ? undefined
@@ -215,121 +444,115 @@ function CardItem({
             }
       }
     >
-      <div
-        className={`flex items-center gap-2 border-b border-gray-100 px-3 py-2 ${readOnly ? '' : 'cursor-grab'}`}
-        draggable={!readOnly}
-        onDragStart={
-          readOnly
-            ? undefined
-            : (e) => {
-                e.dataTransfer.effectAllowed = 'move'
-                onDragStart()
-              }
-        }
-        onDragEnd={readOnly ? undefined : onDragEnd}
-        title={readOnly ? undefined : 'Ziehen zum Umsortieren'}
-      >
-        {!readOnly && <span className="text-gray-300">⠿</span>}
-        <input
-          className="w-full bg-transparent text-sm font-medium text-gray-900 outline-none placeholder:text-gray-400"
-          readOnly={readOnly}
-          placeholder={readOnly ? 'Ohne Titel' : 'Titel …'}
-          defaultValue={card.title ?? ''}
-          onBlur={(e) => {
-            const v = e.target.value.trim()
-            if (v !== (card.title ?? '')) {
-              mutations.updateCard.mutate({ id: card.id, data: { title: v || null } })
-            }
-          }}
-        />
-        {readOnly ? (
-          card.taken_at && (
-            <span className="shrink-0 text-xs text-gray-500">{card.taken_at.slice(0, 10)}</span>
+      <CardHeader
+        card={card}
+        readOnly={readOnly}
+        mutations={mutations}
+        onDelete={onDelete}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+      />
+
+      <div className="flex-1 px-4 pb-4 pt-2">
+        {images.length === 0 ? (
+          readOnly ? (
+            <p className="py-10 text-center text-sm text-gray-400">Noch keine Bilder.</p>
+          ) : (
+            <button
+              className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-400 hover:border-blue-400 hover:text-blue-600"
+              onClick={() => fileRef.current?.click()}
+            >
+              <span className="text-3xl">📷</span>
+              {uploading ? 'Importiere Bilder …' : 'Bilder hierher ziehen oder klicken'}
+            </button>
           )
         ) : (
-          <input
-            type="date"
-            className="shrink-0 bg-transparent text-xs text-gray-500 outline-none"
-            defaultValue={card.taken_at ? card.taken_at.slice(0, 10) : ''}
-            onChange={(e) => {
-              const v = e.target.value
-              mutations.updateCard.mutate({
-                id: card.id,
-                data: { taken_at: v ? `${v}T12:00:00+00:00` : null },
-              })
-            }}
-          />
-        )}
-        {!readOnly && (
-          <button
-            className="hidden shrink-0 rounded px-1 text-gray-400 hover:bg-red-100 hover:text-red-600 group-hover:block"
-            title="Card löschen"
-            onClick={onDelete}
-          >
-            🗑
-          </button>
-        )}
-      </div>
+          <>
+            {/* Hauptbild */}
+            <div className="relative">
+              {activeUrls ? (
+                <img
+                  src={activeUrls.display}
+                  className="aspect-[4/3] w-full cursor-zoom-in rounded-lg object-cover"
+                  onClick={() => onOpenViewbox(activeIdx)}
+                />
+              ) : (
+                <div className="flex aspect-[4/3] w-full items-center justify-center rounded-lg bg-gray-100 text-xs text-gray-400">
+                  {activeUrls === null ? 'noch nicht synchronisiert' : 'lädt …'}
+                </div>
+              )}
+            </div>
 
-      {images.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 px-3 pt-2">
-          {images.map((img) => (
-            <ImageThumb
-              key={img.id}
-              image={img}
-              readOnly={readOnly}
-              onOpen={onOpenImage}
-              onDelete={() => onDeleteImage(img)}
-            />
-          ))}
-        </div>
-      )}
+            {/* Untertitel des grossen Bildes */}
+            {active &&
+              (readOnly ? (
+                active.caption && (
+                  <p className="mt-2 text-sm italic text-gray-500">{active.caption}</p>
+                )
+              ) : (
+                <input
+                  key={active.id}
+                  className="mt-2 w-full bg-transparent text-sm italic text-gray-500 outline-none placeholder:text-gray-300"
+                  placeholder="Untertitel …"
+                  defaultValue={active.caption ?? ''}
+                  onBlur={(e) => {
+                    const v = e.target.value.trim()
+                    if (v !== (active.caption ?? '')) {
+                      mutations.updateImage.mutate({
+                        id: active.id,
+                        data: { caption: v || null },
+                      })
+                    }
+                  }}
+                />
+              ))}
 
-      <div className="flex-1 px-3 py-2">
-        {editingBody ? (
-          <textarea
-            autoFocus
-            className="h-32 w-full resize-y rounded border border-blue-300 p-2 font-mono text-xs outline-none"
-            value={bodyDraft}
-            onChange={(e) => setBodyDraft(e.target.value)}
-            onBlur={saveBody}
-            placeholder="Markdown-Notizen …"
-          />
-        ) : (
-          <div
-            className={`prose prose-sm max-w-none text-sm text-gray-800 [&_a]:text-blue-600 [&_h1]:text-base [&_h2]:text-sm ${readOnly ? '' : 'cursor-text'}`}
-            title={readOnly ? undefined : 'Klicken zum Bearbeiten'}
-            onClick={
-              readOnly
-                ? undefined
-                : () => {
-                    setBodyDraft(card.body_md ?? '')
-                    setEditingBody(true)
-                  }
-            }
-            dangerouslySetInnerHTML={{
-              __html: card.body_md
-                ? renderMarkdown(card.body_md)
-                : readOnly
-                  ? ''
-                  : '<span class="text-gray-400">Notizen hinzufügen …</span>',
-            }}
-          />
+            {/* Thumbnail-Reihe */}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {images.map((img, i) => {
+                const u = urls[img.id]
+                return (
+                  <div key={img.id} className="group/thumb relative">
+                    {u ? (
+                      <img
+                        src={u.thumb}
+                        className={`h-20 w-20 cursor-pointer rounded-md object-cover ${
+                          i === activeIdx ? 'ring-2 ring-blue-500' : 'opacity-80 hover:opacity-100'
+                        }`}
+                        onClick={() => setActiveIdx(i)}
+                      />
+                    ) : (
+                      <div className="flex h-20 w-20 items-center justify-center rounded-md bg-gray-100 text-center text-[10px] leading-tight text-gray-400">
+                        {u === null ? 'nicht synchron' : '…'}
+                      </div>
+                    )}
+                    {!readOnly && (
+                      <button
+                        className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-gray-900/80 text-[10px] text-white group-hover/thumb:flex"
+                        title="Bild entfernen"
+                        onClick={() => onDeleteImage(img)}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+              {!readOnly && (
+                <button
+                  className="flex h-20 w-20 items-center justify-center rounded-md border-2 border-dashed border-gray-300 text-xl text-gray-400 hover:border-blue-400 hover:text-blue-600"
+                  title="Bilder hinzufügen"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  {uploading ? '…' : '+'}
+                </button>
+              )}
+            </div>
+          </>
         )}
       </div>
 
       {!readOnly && (
-      <div className="flex items-center justify-between border-t border-gray-100 px-3 py-1.5">
-        <button
-          className="rounded px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-100"
-          onClick={() => fileRef.current?.click()}
-          disabled={uploading}
-        >
-          {uploading ? 'Importiere Bilder …' : '📷 Bilder hinzufügen'}
-        </button>
-        {editingBody && (
-          <span className="text-xs text-gray-400">Klick ausserhalb speichert</span>
-        )}
         <input
           ref={fileRef}
           type="file"
@@ -341,65 +564,102 @@ function CardItem({
             e.target.value = ''
           }}
         />
-      </div>
       )}
     </div>
   )
 }
 
-function ImageThumb({
-  image,
-  readOnly,
-  onOpen,
-  onDelete,
-}: {
-  image: Image
-  readOnly: boolean
-  onOpen: (displayUrl: string) => void
-  onDelete: () => void
-}) {
-  const api = useApi()
-  const [urls, setUrls] = useState<DerivativeUrls | null | 'loading'>('loading')
-  useEffect(() => {
-    let alive = true
-    void resolveImageUrls(image, api).then((u) => {
-      if (alive) setUrls(u)
-    })
-    return () => {
-      alive = false
-    }
-  }, [image, api])
+// ---------------------------------------------------------------------------
+// Viewbox: grosses Bild mit Vor/Zurück, Untertitel und Zähler
+// ---------------------------------------------------------------------------
 
-  if (urls === 'loading') {
-    return <div className="h-16 w-16 animate-pulse rounded bg-gray-100" />
-  }
-  if (urls === null) {
-    return (
-      <div
-        className="flex h-16 w-16 items-center justify-center rounded bg-gray-100 text-center text-[10px] leading-tight text-gray-400"
-        title="Bild noch nicht synchronisiert (Upload vom Ursprungsgerät ausstehend)"
-      >
-        noch nicht
-        synchron
-      </div>
-    )
-  }
+function Viewbox({
+  images,
+  index,
+  onNavigate,
+  onClose,
+}: {
+  images: Image[]
+  index: number
+  onNavigate: (index: number) => void
+  onClose: () => void
+}) {
+  const urls = useImageUrls(images)
+  const img = images[index]
+  const u = img ? urls[img.id] : null
+
+  const prev = useCallback(
+    () => onNavigate((index - 1 + images.length) % images.length),
+    [index, images.length, onNavigate]
+  )
+  const next = useCallback(
+    () => onNavigate((index + 1) % images.length),
+    [index, images.length, onNavigate]
+  )
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+      else if (e.key === 'ArrowLeft') prev()
+      else if (e.key === 'ArrowRight') next()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose, prev, next])
+
   return (
-    <div className="group/thumb relative">
-      <img
-        src={urls.thumb}
-        className="h-16 w-16 cursor-zoom-in rounded object-cover"
-        onClick={() => onOpen(urls.display)}
-      />
-      {!readOnly && (
+    <div
+      className="fixed inset-0 z-40 flex flex-col items-center justify-center bg-black/85 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="relative flex max-h-[85vh] max-w-5xl items-center"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {u ? (
+          <img src={u.display} className="max-h-[80vh] max-w-full rounded shadow-2xl" />
+        ) : (
+          <div className="flex h-64 w-96 items-center justify-center text-sm text-gray-400">
+            {u === null ? 'Bild nicht verfügbar' : 'lädt …'}
+          </div>
+        )}
+
+        {images.length > 1 && (
+          <>
+            <button
+              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 px-3 py-2 text-2xl text-white hover:bg-black/70"
+              title="Vorheriges Bild"
+              onClick={prev}
+            >
+              ‹
+            </button>
+            <button
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 px-3 py-2 text-2xl text-white hover:bg-black/70"
+              title="Nächstes Bild"
+              onClick={next}
+            >
+              ›
+            </button>
+          </>
+        )}
+
         <button
-          className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-gray-900/80 text-[10px] text-white group-hover/thumb:flex"
-          title="Bild entfernen"
-          onClick={onDelete}
+          className="absolute -right-2 -top-2 rounded-full bg-black/60 px-2.5 py-1 text-sm text-white hover:bg-black/80"
+          title="Schliessen"
+          onClick={onClose}
         >
           ✕
         </button>
-      )}
+      </div>
+
+      <div className="mt-3 text-center text-sm text-gray-200" onClick={(e) => e.stopPropagation()}>
+        {img?.caption && <p className="italic">{img.caption}</p>}
+        {images.length > 1 && (
+          <p className="mt-1 text-xs text-gray-400">
+            {index + 1} / {images.length}
+          </p>
+        )}
+      </div>
     </div>
   )
 }

@@ -66,10 +66,13 @@ export const tourUpdateSchema = z
 // Card
 // ---------------------------------------------------------------------------
 
+export const cardKindSchema = z.enum(['text', 'images'])
+
 export const cardSchema = z.object({
   id: z.uuid(),
   tour_id: z.uuid(),
   title: z.string().nullable(),
+  kind: cardKindSchema,
   body_md: z.string().nullable(),
   position: z.number().int(),
   taken_at: z.string().nullable(),
@@ -79,6 +82,7 @@ export const cardSchema = z.object({
 
 export const cardCreateSchema = z.object({
   tour_id: z.uuid(),
+  kind: cardKindSchema.optional(),
   title: z.string().max(300).optional(),
   body_md: z.string().optional(),
   position: z.number().int().nonnegative().optional(),
@@ -111,6 +115,7 @@ export const imageSchema = z.object({
   id: z.uuid(),
   card_id: z.uuid(),
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  caption: z.string().nullable(),
   r2_key_display: z.string().nullable(),
   r2_key_thumb: z.string().nullable(),
   lat: z.number().nullable(),
@@ -130,6 +135,7 @@ export const imageCreateSchema = z.object({
 
 export const imageUpdateSchema = z
   .object({
+    caption: z.string().max(500).nullable(),
     r2_key_display: z.string().nullable(),
     r2_key_thumb: z.string().nullable(),
     upload_state: uploadStateSchema,

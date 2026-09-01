@@ -42,6 +42,8 @@ export const cards = pgTable('cards', {
     .notNull()
     .references(() => tours.id),
   title: text('title'),
+  // Kachel-Typ: 'text' (Überschrift + Markdown) oder 'images' (Galerie).
+  kind: text('kind').notNull().default('text'),
   body_md: text('body_md'),
   position: integer('position').notNull().default(0),
   taken_at: timestamp('taken_at', { withTimezone: true, mode: 'string' }),
@@ -62,6 +64,7 @@ export const images = pgTable('images', {
   sha256: text('sha256').notNull().unique(), // Content-Adressierung
   r2_key_display: text('r2_key_display'), // 2000px WebP (Phase 8)
   r2_key_thumb: text('r2_key_thumb'), // 300px WebP (Phase 8)
+  caption: text('caption'), // Untertitel unterm grossen Bild
   lat: doublePrecision('lat'), // aus EXIF
   lon: doublePrecision('lon'),
   taken_at: timestamp('taken_at', { withTimezone: true, mode: 'string' }),

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Card, CardUpdate, Image } from '@tourenbuch/shared'
+import type { Card, CardUpdate, Image, ImageUpdate } from '@tourenbuch/shared'
 import { useApi } from '../lib/api'
 import { processImageFile } from '../lib/image-pipeline'
 import { hasDerivatives, removeDerivatives, saveDerivatives } from '../lib/image-store'
@@ -34,7 +34,7 @@ export function useCardMutations(tourId: string | null) {
     queryClient.invalidateQueries({ queryKey: imagesKey(tourId ?? 'none') })
 
   const createCard = useMutation({
-    mutationFn: () => api.createCard({ tour_id: tourId! }),
+    mutationFn: (kind: 'text' | 'images') => api.createCard({ tour_id: tourId!, kind }),
     onSuccess: invalidateCards,
   })
 
@@ -112,6 +112,15 @@ export function useCardMutations(tourId: string | null) {
     onSuccess: invalidateImages,
   })
 
+  const updateImage = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ImageUpdate }) => api.updateImage(id, data),
+    onSuccess: (updated) => {
+      queryClient.setQueryData<Image[]>(imagesKey(tourId ?? 'none'), (old) =>
+        old?.map((i) => (i.id === updated.id ? updated : i))
+      )
+    },
+  })
+
   const deleteImage = useMutation({
     mutationFn: async (image: Image) => {
       await api.deleteImage(image.id)
@@ -120,5 +129,13 @@ export function useCardMutations(tourId: string | null) {
     onSuccess: invalidateImages,
   })
 
-  return { createCard, updateCard, deleteCard, reorderCards, addImages, deleteImage }
+  return {
+    createCard,
+    updateCard,
+    deleteCard,
+    reorderCards,
+    addImages,
+    updateImage,
+    deleteImage,
+  }
 }

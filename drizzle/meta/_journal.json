@@ -15,6 +15,13 @@
       "when": 1788270712410,
       "tag": "0001_neon_auth_users",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788273225119,
+      "tag": "0002_book_tiles",
+      "breakpoints": true
     }
   ]
 }

@@ -213,6 +213,7 @@ describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
       const a = (await (
         await req('POST', '/api/cards', { tour_id: tourId, title: 'Aufstieg' })
       ).json()) as Card
+      expect(a.kind).toBe('text') // Default
       const b = (await (
         await req('POST', '/api/cards', { tour_id: tourId, title: 'Gipfel', body_md: '**top**' })
       ).json()) as Card
@@ -220,6 +221,13 @@ describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
       expect(b.position).toBe(1)
       cardA = a.id
       cardB = b.id
+    })
+
+    it('POST /api/cards mit kind=images legt eine Bilder-Kachel an', async () => {
+      const res = await req('POST', '/api/cards', { tour_id: tourId, kind: 'images' })
+      const card = (await res.json()) as Card
+      expect(card.kind).toBe('images')
+      await req('DELETE', `/api/cards/${card.id}`)
     })
 
     it('GET /api/tours/:id/cards liefert nach Position sortiert', async () => {
@@ -310,10 +318,15 @@ describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
       expect(rows.map((r) => r.id)).toEqual([imageId])
     })
 
-    it('PATCH /api/images/:id setzt upload_state', async () => {
-      const res = await req('PATCH', `/api/images/${imageId}`, { upload_state: 'uploaded' })
+    it('PATCH /api/images/:id setzt upload_state und caption', async () => {
+      const res = await req('PATCH', `/api/images/${imageId}`, {
+        upload_state: 'uploaded',
+        caption: 'Blick vom Grat',
+      })
       expect(res.status).toBe(200)
-      expect(((await res.json()) as { upload_state: string }).upload_state).toBe('uploaded')
+      const img = (await res.json()) as { upload_state: string; caption: string | null }
+      expect(img.upload_state).toBe('uploaded')
+      expect(img.caption).toBe('Blick vom Grat')
     })
 
     it('POST für unbekannte Card → 404; kaputte sha256 → 400', async () => {

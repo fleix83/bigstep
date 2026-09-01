@@ -1,5 +1,14 @@
 # Changelog
 
+## Book-Redesign: Bilder- und Text-Kacheln (2026-09-01)
+
+- **Zwei Kachel-Typen** statt einer Einheits-Card: Beim Erstellen wählt man «+ Text» oder «+ Bilder» (`cards.kind`, Migration `drizzle/0002_book_tiles.sql` auf production- und test-Branch; bestehende Cards mit Bildern wurden zu Bilder-Kacheln).
+- **Text-Kachel:** grosse Überschrift oben, darunter Markdown-Fliesstext mit Bulletpoints (klicken zum Bearbeiten, gerendert via marked + DOMPurify).
+- **Bilder-Kachel:** ein Bild gross (4:3), darunter eine Thumbnail-Reihe mit aktiv-Ring, ✕-Entfernen und «+»-Upload-Kachel; leere Kachel als Dropzone. Jedes Bild kann einen **Untertitel** haben (`images.caption`, Inline-Input unter dem grossen Bild, PATCH `/api/images/:id`).
+- **Viewbox:** Klick aufs grosse Bild öffnet einen Vollbild-Viewer mit ‹/›-Pfeilen (mit Wraparound), Pfeiltasten + Escape, Untertitel und Zähler «n / total».
+- Book-Grid zweispaltig ab `lg`; Drag-and-drop-Umsortieren, Datum und Löschen wie bisher in der Kachel-Kopfzeile. Read-only-PWA rendert beide Kachel-Typen ohne Editier-Controls.
+- Tests: Card-`kind` (Default text, images) und Bild-Caption-PATCH (35 API-Tests, 68 gesamt). E2E auf Produktion verifiziert (beide Kachel-Typen, Untertitel über Reload persistent, Viewbox-Navigation, Bild-Löschen mit Bestätigung, Mobile-read-only); Test-Artefakte wieder entfernt.
+
 ## Neon Auth – User-System (2026-09-01)
 
 - **Konten statt statischem Token:** Anmeldung/Registrierung über Neon Auth (Managed Better Auth, Provider im Projekt «Bigstep»); die API verifiziert pro Request ein 15-Minuten-JWT (EdDSA) gegen das JWKS (`jose`), `sub` = User-ID. Der alte `API_TOKEN` ist entfernt (Secret gelöscht, Middleware ersetzt); `/api/health` ist jetzt öffentlich.
