@@ -37,8 +37,20 @@ export function LoginScreen({ auth, onSignedIn, onOpenSettings }: Props) {
       const user = session.data?.user
       if (user) onSignedIn({ id: user.id, email: user.email, name: user.name })
       else setError('Sitzung konnte nicht geladen werden')
-    } catch {
-      setError('Server nicht erreichbar – stimmt die API-URL?')
+    } catch (e) {
+      // Die Beta-SDK wirft bei 4xx (z. B. falsches Passwort) eine Exception
+      // statt eines error-Results — deren Message ist aussagekräftiger als
+      // ein pauschales «Server nicht erreichbar».
+      const raw = e instanceof Error ? e.message : ''
+      if (/invalid email or password/i.test(raw)) {
+        setError('E-Mail oder Passwort falsch')
+      } else if (/already exists/i.test(raw)) {
+        setError('Für diese E-Mail existiert schon ein Konto – bitte anmelden')
+      } else if (raw && !/failed to fetch|networkerror|load failed/i.test(raw)) {
+        setError(raw)
+      } else {
+        setError('Server nicht erreichbar – stimmt die API-URL?')
+      }
     } finally {
       setBusy(false)
     }
