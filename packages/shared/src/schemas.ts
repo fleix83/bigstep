@@ -23,12 +23,17 @@ export const bboxSchema = z.tuple([z.number(), z.number(), z.number(), z.number(
 // ---------------------------------------------------------------------------
 
 export const tourStatusSchema = z.enum(['geplant', 'gemacht'])
+export const tourVisibilitySchema = z.enum(['private', 'public'])
 
 /** Tour, wie die API sie liefert (Timestamps als ISO-Strings, soft-deleted nie enthalten). */
 export const tourSchema = z.object({
   id: z.uuid(),
+  // Owner (Neon-Auth-User-ID) – der Client vergleicht damit gegen den
+  // eingeloggten User, um fremde (geteilte) Touren read-only zu rendern.
+  user_id: z.string(),
   name: z.string(),
   status: tourStatusSchema,
+  visibility: tourVisibilitySchema,
   geometry: lineStringSchema.nullable(),
   waypoints: z.array(lonLatSchema).nullable(),
   distance_m: z.number().int().nullable(),
@@ -50,6 +55,7 @@ export const tourUpdateSchema = z
   .object({
     name: z.string().min(1).max(200),
     status: tourStatusSchema,
+    visibility: tourVisibilitySchema,
     geometry: lineStringSchema.nullable(),
     waypoints: z.array(lonLatSchema).nullable(),
     distance_m: z.number().int().nonnegative().nullable(),
@@ -157,7 +163,13 @@ export const settingPutSchema = z.object({
 // Abgeleitete Typen
 // ---------------------------------------------------------------------------
 
+/** Geteilte Tour eines anderen Users (Liste «Von anderen geteilt»). */
+export const sharedTourSchema = tourSchema.extend({
+  owner_name: z.string().nullable(),
+})
+
 export type Tour = z.infer<typeof tourSchema>
+export type SharedTour = z.infer<typeof sharedTourSchema>
 export type TourCreate = z.infer<typeof tourCreateSchema>
 export type TourUpdate = z.infer<typeof tourUpdateSchema>
 export type Card = z.infer<typeof cardSchema>

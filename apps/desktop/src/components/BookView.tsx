@@ -9,10 +9,12 @@ import { ConfirmDialog } from './ConfirmDialog'
 
 interface Props {
   tourId: string
+  /** Tour-Name — wird als Haupttitel des Books angezeigt. */
+  tourName: string
   /** Card, zu der gescrollt werden soll (Klick auf Foto-Pin). */
   highlightCardId: string | null
   onHighlightDone: () => void
-  /** PWA/Mobile: Editier-Controls werden nicht gerendert (PRD F6). */
+  /** Fremde (geteilte) Touren: Editier-Controls werden nicht gerendert. */
   readOnly?: boolean
 }
 
@@ -45,7 +47,13 @@ interface ViewboxState {
   index: number
 }
 
-export function BookView({ tourId, highlightCardId, onHighlightDone, readOnly = false }: Props) {
+export function BookView({
+  tourId,
+  tourName,
+  highlightCardId,
+  onHighlightDone,
+  readOnly = false,
+}: Props) {
   const { data: cards, isLoading } = useCards(tourId)
   const { data: images } = useTourImages(tourId)
   const mutations = useCardMutations(tourId)
@@ -92,8 +100,8 @@ export function BookView({ tourId, highlightCardId, onHighlightDone, readOnly = 
 
   return (
     <div className="h-full overflow-y-auto bg-gray-100 p-4 md:p-6">
-      <div className="mb-5 flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Book</h2>
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <h2 className="truncate text-xl font-bold text-gray-900 md:text-2xl">{tourName}</h2>
         {!readOnly && (
           <div className="flex gap-2">
             <button
@@ -607,59 +615,68 @@ function Viewbox({
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose, prev, next])
 
+  // Vollbild-Viewer: das Bild füllt den ganzen Viewport (object-contain),
+  // Bedienelemente liegen als Overlays darüber. Klick aufs Bild schliesst.
   return (
-    <div
-      className="fixed inset-0 z-40 flex flex-col items-center justify-center bg-black/85 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="relative flex max-h-[85vh] max-w-5xl items-center"
-        onClick={(e) => e.stopPropagation()}
+    <div className="fixed inset-0 z-40 bg-black" onClick={onClose}>
+      {u ? (
+        <img
+          src={u.display}
+          className="absolute inset-0 h-full w-full object-contain"
+          alt={img?.caption ?? ''}
+        />
+      ) : (
+        <div className="flex h-full items-center justify-center text-sm text-gray-400">
+          {u === null ? 'Bild nicht verfügbar' : 'lädt …'}
+        </div>
+      )}
+
+      {images.length > 1 && (
+        <>
+          <button
+            className="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/10 px-4 py-2.5 text-3xl text-white hover:bg-white/25 md:left-4"
+            title="Vorheriges Bild"
+            onClick={(e) => {
+              e.stopPropagation()
+              prev()
+            }}
+          >
+            ‹
+          </button>
+          <button
+            className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/10 px-4 py-2.5 text-3xl text-white hover:bg-white/25 md:right-4"
+            title="Nächstes Bild"
+            onClick={(e) => {
+              e.stopPropagation()
+              next()
+            }}
+          >
+            ›
+          </button>
+        </>
+      )}
+
+      <button
+        className="absolute right-3 top-3 z-10 rounded-full bg-white/10 px-3 py-1.5 text-lg text-white hover:bg-white/25"
+        title="Schliessen"
+        onClick={onClose}
       >
-        {u ? (
-          <img src={u.display} className="max-h-[80vh] max-w-full rounded shadow-2xl" />
-        ) : (
-          <div className="flex h-64 w-96 items-center justify-center text-sm text-gray-400">
-            {u === null ? 'Bild nicht verfügbar' : 'lädt …'}
-          </div>
-        )}
+        ✕
+      </button>
 
-        {images.length > 1 && (
-          <>
-            <button
-              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 px-3 py-2 text-2xl text-white hover:bg-black/70"
-              title="Vorheriges Bild"
-              onClick={prev}
-            >
-              ‹
-            </button>
-            <button
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 px-3 py-2 text-2xl text-white hover:bg-black/70"
-              title="Nächstes Bild"
-              onClick={next}
-            >
-              ›
-            </button>
-          </>
-        )}
-
-        <button
-          className="absolute -right-2 -top-2 rounded-full bg-black/60 px-2.5 py-1 text-sm text-white hover:bg-black/80"
-          title="Schliessen"
-          onClick={onClose}
+      {(img?.caption || images.length > 1) && (
+        <div
+          className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/75 to-transparent px-6 pb-4 pt-12 text-center text-gray-100"
+          onClick={(e) => e.stopPropagation()}
         >
-          ✕
-        </button>
-      </div>
-
-      <div className="mt-3 text-center text-sm text-gray-200" onClick={(e) => e.stopPropagation()}>
-        {img?.caption && <p className="italic">{img.caption}</p>}
-        {images.length > 1 && (
-          <p className="mt-1 text-xs text-gray-400">
-            {index + 1} / {images.length}
-          </p>
-        )}
-      </div>
+          {img?.caption && <p className="italic">{img.caption}</p>}
+          {images.length > 1 && (
+            <p className="mt-1 text-xs text-gray-400">
+              {index + 1} / {images.length}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import {
   cardSchema,
   imageSchema,
+  sharedTourSchema,
   tourSchema,
   type Card,
   type CardCreate,
@@ -9,6 +10,7 @@ import {
   type Image,
   type ImageCreate,
   type ImageUpdate,
+  type SharedTour,
   type Tour,
   type TourCreate,
   type TourUpdate,
@@ -76,6 +78,10 @@ export class ApiClient {
   // Tours
   listTours(sort: 'updated' | 'name' = 'updated'): Promise<Tour[]> {
     return this.request('GET', `/api/tours?sort=${sort}`, z.array(tourSchema))
+  }
+  /** Öffentlich geteilte Touren anderer User (read-only). */
+  listSharedTours(): Promise<SharedTour[]> {
+    return this.request('GET', '/api/tours/shared', z.array(sharedTourSchema))
   }
   createTour(data: TourCreate): Promise<Tour> {
     return this.request('POST', '/api/tours', tourSchema, data)

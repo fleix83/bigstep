@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Tour } from '@tourenbuch/shared'
-import { useTours, useTourMutations } from '../hooks/useTours'
+import { useSharedTours, useTours, useTourMutations } from '../hooks/useTours'
 import { formatDistance, formatDuration, formatMeters } from '../lib/format'
 import { StatusBadge } from './StatusBadge'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -16,6 +16,7 @@ interface Props {
 
 export function TourList({ selectedId, onSelect, readOnly = false }: Props) {
   const { data: tours, isLoading, error: loadError } = useTours()
+  const { data: sharedTours } = useSharedTours()
   const [sortMode, setSortMode] = useState<SortMode>('updated')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deleteCandidate, setDeleteCandidate] = useState<Tour | null>(null)
@@ -115,6 +116,31 @@ export function TourList({ selectedId, onSelect, readOnly = false }: Props) {
             />
           ))}
         </ul>
+
+        {sharedTours && sharedTours.length > 0 && (
+          <>
+            <div className="border-b border-t border-gray-200 bg-gray-100 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Von anderen geteilt
+            </div>
+            <ul>
+              {sharedTours.map((tour) => (
+                <TourListItem
+                  key={tour.id}
+                  tour={tour}
+                  ownerName={tour.owner_name ?? undefined}
+                  readOnly
+                  selected={tour.id === selectedId}
+                  editing={false}
+                  onSelect={() => onSelect(tour.id)}
+                  onStartEdit={() => {}}
+                  onRename={() => {}}
+                  onToggleStatus={() => {}}
+                  onDelete={() => {}}
+                />
+              ))}
+            </ul>
+          </>
+        )}
       </div>
 
       {deleteCandidate && (
@@ -131,6 +157,8 @@ export function TourList({ selectedId, onSelect, readOnly = false }: Props) {
 
 interface ItemProps {
   tour: Tour
+  /** Bei geteilten Touren: Anzeigename des Owners. */
+  ownerName?: string
   readOnly: boolean
   selected: boolean
   editing: boolean
@@ -143,6 +171,7 @@ interface ItemProps {
 
 function TourListItem({
   tour,
+  ownerName,
   readOnly,
   selected,
   editing,
@@ -210,6 +239,7 @@ function TourListItem({
           </button>
         )}
       </div>
+      {ownerName && <div className="mt-0.5 text-xs text-gray-400">von {ownerName}</div>}
       <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
         <span>{formatDistance(tour.distance_m)}</span>
         <span>↑ {formatMeters(tour.ascent_m)}</span>

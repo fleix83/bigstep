@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { and, asc, desc, eq, isNull, max, sql } from 'drizzle-orm'
-import { cards, images, settings, tours } from '@tourenbuch/shared/db'
+import { and, asc, desc, eq, isNull, max, ne, or, sql } from 'drizzle-orm'
+import { authUsers, cards, images, settings, tours } from '@tourenbuch/shared/db'
 import {
   cardCreateSchema,
   cardUpdateSchema,
@@ -130,6 +130,30 @@ app.get('/api/tours', async (c) => {
   return c.json(rows.map(stripDeleted))
 })
 
+/**
+ * Öffentlich geteilte Touren anderer User (read-only, inkl. Book über die
+ * normalen Card-/Image-Reads). Owner-Name aus dem Neon-Auth-Verzeichnis;
+ * E-Mails bleiben bewusst aussen vor.
+ */
+app.get('/api/tours/shared', async (c) => {
+  const db = getDb(c.env)
+  const rows = await db
+    .select({ tour: tours, owner_name: authUsers.name })
+    .from(tours)
+    .leftJoin(authUsers, sql`${authUsers.id}::text = ${tours.user_id}`)
+    .where(
+      and(
+        isNull(tours.deleted_at),
+        eq(tours.visibility, 'public'),
+        ne(tours.user_id, c.get('userId'))
+      )
+    )
+    .orderBy(desc(tours.updated_at))
+  return c.json(
+    rows.map((r) => ({ ...stripDeleted(r.tour), owner_name: r.owner_name ?? null }))
+  )
+})
+
 app.post('/api/tours', async (c) => {
   const body = validate(tourCreateSchema, await readJson(c))
   const db = getDb(c.env)
@@ -187,6 +211,25 @@ async function requireTour(db: ReturnType<typeof getDb>, tourId: string, userId:
   if (!row) throw new ApiError(404, 'not_found', 'Tour nicht gefunden')
 }
 
+/** Lesezugriff: eigene Tour ODER öffentlich geteilte Tour eines anderen Users. */
+async function requireTourRead(
+  db: ReturnType<typeof getDb>,
+  tourId: string,
+  userId: string
+) {
+  const [row] = await db
+    .select({ id: tours.id })
+    .from(tours)
+    .where(
+      and(
+        eq(tours.id, tourId),
+        isNull(tours.deleted_at),
+        or(eq(tours.user_id, userId), eq(tours.visibility, 'public'))
+      )
+    )
+  if (!row) throw new ApiError(404, 'not_found', 'Tour nicht gefunden')
+}
+
 /** Card muss existieren und über ihre Tour dem User gehören. */
 async function requireCard(db: ReturnType<typeof getDb>, cardId: string, userId: string) {
   const [row] = await db
@@ -214,10 +257,30 @@ async function userOwnsSha(
   return rows.length > 0
 }
 
+/** Bild lesbar: gehört dem User oder hängt an einer öffentlich geteilten Tour. */
+async function shaReadable(
+  db: ReturnType<typeof getDb>,
+  sha: string,
+  userId: string
+): Promise<boolean> {
+  const rows = await db
+    .select({ id: images.id })
+    .from(images)
+    .innerJoin(cards, eq(images.card_id, cards.id))
+    .innerJoin(tours, eq(cards.tour_id, tours.id))
+    .where(
+      and(
+        eq(images.sha256, sha),
+        or(eq(tours.user_id, userId), eq(tours.visibility, 'public'))
+      )
+    )
+  return rows.length > 0
+}
+
 app.get('/api/tours/:id/cards', async (c) => {
   const tourId = idParam(c.req.param('id'))
   const db = getDb(c.env)
-  await requireTour(db, tourId, c.get('userId'))
+  await requireTourRead(db, tourId, c.get('userId'))
   const rows = await db
     .select()
     .from(cards)
@@ -302,7 +365,7 @@ app.post('/api/cards/reorder', async (c) => {
 app.get('/api/tours/:id/images', async (c) => {
   const tourId = idParam(c.req.param('id'))
   const db = getDb(c.env)
-  await requireTour(db, tourId, c.get('userId'))
+  await requireTourRead(db, tourId, c.get('userId'))
   const rows = await db
     .select({ image: images })
     .from(images)
@@ -439,7 +502,8 @@ app.put('/api/images/:sha256/:variant', async (c) => {
 app.get('/api/images/:sha256/:variant', async (c) => {
   const sha = shaParam(c.req.param('sha256'))
   const variant = variantParam(c.req.param('variant'))
-  if (!(await userOwnsSha(getDb(c.env), sha, c.get('userId')))) {
+  // Lesen auch für Bilder öffentlich geteilter Touren (Book fremder Touren).
+  if (!(await shaReadable(getDb(c.env), sha, c.get('userId')))) {
     throw new ApiError(404, 'not_found', 'Kein Bild mit dieser sha256 im Konto')
   }
   const obj = await c.env.R2.get(r2Key(sha, variant))

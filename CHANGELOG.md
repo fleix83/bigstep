@@ -1,5 +1,13 @@
 # Changelog
 
+## Touren-Sharing + Book-Feinschliff (2026-09-01)
+
+- **Touren teilen:** Jede eigene Tour lässt sich per «Teilen»-Knopf in der Topbar für alle User der App sichtbar machen (`tours.visibility` private/public, Migration `drizzle/0003_tour_sharing.sql` auf beiden Neon-Branches). Geteilte Touren erscheinen bei anderen Usern in der Tourenliste unter **«Von anderen geteilt»** (mit Owner-Name aus dem Neon-Auth-Verzeichnis, E-Mails bleiben privat) und sind strikt read-only — Karte, Kennzahlen, GPX-Export und das komplette Book inkl. Bildern aus R2 sind sichtbar, jede Schreiboperation (Tour/Cards/Bilder/R2-PUT) bleibt 404. Zurückschalten auf privat entzieht den Zugriff sofort.
+- **Book auch mobil editierbar:** Die Kacheln sind nicht mehr an den Desktop gebunden — auf dem Smartphone lassen sich Text-Kacheln schreiben und ändern, Bilder hochladen (Kamera/Fotoauswahl via file-input) und löschen sowie Untertitel setzen. Die Upload-Queue läuft jetzt auch in der PWA, damit mobil importierte Bilder nach R2 kommen. Read-only bleiben nur fremde (geteilte) Touren; Tour-Verwaltung/Routen-Editor auf mobile unverändert read-only.
+- **Viewbox im Vollbild:** Der Bild-Viewer füllt jetzt den ganzen Viewport (schwarzer Grund, object-contain), Pfeile am Bildschirmrand, Untertitel + Zähler als Gradient-Overlay unten; Klick aufs Bild oder Escape schliesst.
+- **Tour-Name als Book-Titel:** Das Book zeigt als Haupttitel den Namen der Route statt des Labels «Book».
+- Tests: 5 neue Sharing-Fälle (sichtbar/unsichtbar, Owner-Name, read-only-Erzwingung, R2-Zugriff, Entzug) — 40 API-Tests, 73 gesamt. E2E auf Produktion: Teilen/Entteilen im UI, Zweitkonto sieht Tour samt Book und R2-Bild, Schreibversuche abgewiesen. `public/sw.js` von ESLint ausgenommen (Service-Worker-Globals), Root-Lint damit grün.
+
 ## Book-Redesign: Bilder- und Text-Kacheln (2026-09-01)
 
 - **Zwei Kachel-Typen** statt einer Einheits-Card: Beim Erstellen wählt man «+ Text» oder «+ Bilder» (`cards.kind`, Migration `drizzle/0002_book_tiles.sql` auf production- und test-Branch; bestehende Cards mit Bildern wurden zu Bilder-Kacheln).

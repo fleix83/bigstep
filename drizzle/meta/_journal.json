@@ -22,6 +22,13 @@
       "when": 1788273225119,
       "tag": "0002_book_tiles",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788286490216,
+      "tag": "0003_tour_sharing",
+      "breakpoints": true
     }
   ]
 }

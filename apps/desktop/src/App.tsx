@@ -13,7 +13,7 @@ import { SettingsDialog } from './components/SettingsDialog'
 import { MapView } from './components/MapView'
 import { ImportDialog, type ImportCandidate } from './components/ImportDialog'
 import { BookView } from './components/BookView'
-import { useTours } from './hooks/useTours'
+import { useSharedTours, useTours } from './hooks/useTours'
 import { useReadOnly } from './lib/use-read-only'
 import { useRouteEditor } from './hooks/useRouteEditor'
 import { useTourImages } from './hooks/useCards'
@@ -48,13 +48,20 @@ function Shell() {
   const api = useApi()
   const queryClient = useQueryClient()
   const { data: tours } = useTours()
-  const selectedTour = tours?.find((t) => t.id === selectedId) ?? null
+  const { data: sharedTours } = useSharedTours()
+  const selectedTour =
+    tours?.find((t) => t.id === selectedId) ??
+    sharedTours?.find((t) => t.id === selectedId) ??
+    null
+  // Fremde (geteilte) Touren sind strikt read-only, eigene editierbar.
+  const isOwner = selectedTour === null || selectedTour.user_id === user.id
   const readOnly = useReadOnly()
-  // Upload-Queue nur im Editier-Kontext (Desktop); die PWA lädt nur an.
-  const uploadStatus = useUploadQueue(!readOnly && config !== null)
+  // Auch die mobile PWA editiert jetzt das Book — die Upload-Queue muss dort
+  // ebenfalls laufen, damit frisch importierte Bilder nach R2 kommen.
+  const uploadStatus = useUploadQueue(config !== null)
   const [fullscreen, setFullscreen] = useState(false)
   const [editing, setEditing] = useState(false)
-  const editor = useRouteEditor(selectedTour, editing && !readOnly && tab === 'karte')
+  const editor = useRouteEditor(selectedTour, editing && !readOnly && isOwner && tab === 'karte')
   const [highlightCardId, setHighlightCardId] = useState<string | null>(null)
 
   // Foto-Pins: Bilder mit GPS der aktiven Tour, Thumb-URLs lokal auflösen.
@@ -228,8 +235,38 @@ function Shell() {
             )}
 
             {selectedTour && (
-              <span className="ml-auto self-center truncate px-4 text-sm text-gray-400">
-                {selectedTour.name}
+              <span className="ml-auto flex min-w-0 items-center gap-2 self-center px-4">
+                {isOwner && !readOnly ? (
+                  <button
+                    className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs ${
+                      selectedTour.visibility === 'public'
+                        ? 'border-green-300 bg-green-50 text-green-700'
+                        : 'border-gray-300 text-gray-500 hover:bg-gray-100'
+                    }`}
+                    title={
+                      selectedTour.visibility === 'public'
+                        ? 'Für alle User sichtbar – klicken, um wieder privat zu machen'
+                        : 'Tour (inkl. Book) für alle User der App sichtbar machen'
+                    }
+                    onClick={() => {
+                      void api
+                        .updateTour(selectedTour.id, {
+                          visibility:
+                            selectedTour.visibility === 'public' ? 'private' : 'public',
+                        })
+                        .then(() =>
+                          queryClient.invalidateQueries({ queryKey: ['tours'] })
+                        )
+                    }}
+                  >
+                    {selectedTour.visibility === 'public' ? '🌍 Geteilt' : 'Teilen'}
+                  </button>
+                ) : !isOwner ? (
+                  <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-500">
+                    🌍 geteilt
+                  </span>
+                ) : null}
+                <span className="truncate text-sm text-gray-400">{selectedTour.name}</span>
               </span>
             )}
           </nav>
@@ -253,7 +290,7 @@ function Shell() {
             />
 
             {/* Editor-Toolbar */}
-            {!readOnly && tab === 'karte' && selectedTour && (
+            {!readOnly && isOwner && tab === 'karte' && selectedTour && (
               <div className="absolute left-14 top-2 z-10 flex items-center gap-1 rounded-lg border border-gray-200 bg-white/95 px-2 py-1.5 shadow-md">
                 {!editing ? (
                   <button
@@ -332,9 +369,11 @@ function Shell() {
                 {selectedTour ? (
                   <BookView
                     tourId={selectedTour.id}
+                    tourName={selectedTour.name}
                     highlightCardId={highlightCardId}
                     onHighlightDone={() => setHighlightCardId(null)}
-                    readOnly={readOnly}
+                    // Book ist auch mobil editierbar; nur fremde Touren sind read-only.
+                    readOnly={!isOwner}
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center text-sm text-gray-500">

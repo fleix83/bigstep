@@ -10,8 +10,10 @@ import {
 
 const validTour = {
   id: '7f9c24e5-2f60-4b8e-9c8d-1a2b3c4d5e6f',
+  user_id: 'user-a-1111',
   name: 'Basel – Chrischona',
   status: 'geplant',
+  visibility: 'private',
   geometry: {
     type: 'LineString',
     coordinates: [

@@ -1,4 +1,5 @@
 import {
+  pgSchema,
   pgTable,
   primaryKey,
   uuid,
@@ -19,6 +20,8 @@ export const tours = pgTable('tours', {
   user_id: text('user_id').notNull(),
   name: text('name').notNull(),
   status: text('status').notNull().default('geplant'), // 'geplant' | 'gemacht'
+  // 'private' (nur Owner) | 'public' (alle angemeldeten User, read-only inkl. Book)
+  visibility: text('visibility').notNull().default('private'),
   geometry: jsonb('geometry').$type<LineString>(),
   waypoints: jsonb('waypoints').$type<LonLat[]>(),
   distance_m: integer('distance_m'),
@@ -72,6 +75,18 @@ export const images = pgTable('images', {
   created_at: timestamp('created_at', { withTimezone: true, mode: 'string' })
     .notNull()
     .defaultNow(),
+})
+
+/**
+ * Neon-Auth-Userverzeichnis (von Neon Auth verwaltet, hier nur lesend für
+ * Owner-Namen geteilter Touren). Liegt ausserhalb von schemaFilter 'public',
+ * drizzle-kit generiert dafür also keine Migrationen.
+ */
+const neonAuth = pgSchema('neon_auth')
+export const authUsers = neonAuth.table('user', {
+  id: uuid('id').primaryKey(),
+  name: text('name'),
+  email: text('email'),
 })
 
 export const settings = pgTable(

@@ -438,6 +438,96 @@ describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
     })
   })
 
+  describe('Sharing (visibility public)', () => {
+    let tourId: string
+    let cardId: string
+    const SHA = 'f'.repeat(64)
+    const bytes = new Uint8Array([9, 8, 7])
+
+    function putVariantAs(token: string) {
+      return app.request(
+        `/api/images/${SHA}/thumb`,
+        {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'image/webp' },
+          body: bytes,
+        },
+        env
+      )
+    }
+
+    beforeAll(async () => {
+      const tour = (await (
+        await req('POST', '/api/tours', { name: 'Geteilte Tour' })
+      ).json()) as Tour
+      tourId = tour.id
+      const card = (await (
+        await req('POST', '/api/cards', { tour_id: tourId, title: 'Öffentlich' })
+      ).json()) as Card
+      cardId = card.id
+      await req('POST', '/api/images', { card_id: cardId, sha256: SHA })
+      await app.request(
+        `/api/images/${SHA}/display`,
+        {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'image/webp' },
+          body: bytes,
+        },
+        env
+      )
+    })
+
+    it('privat: B sieht die Tour nirgends, Cards und R2 → 404', async () => {
+      const shared = (await (
+        await req('GET', '/api/tours/shared', undefined, TOKEN_B)
+      ).json()) as Tour[]
+      expect(shared.some((t) => t.id === tourId)).toBe(false)
+      expect((await req('GET', `/api/tours/${tourId}/cards`, undefined, TOKEN_B)).status).toBe(404)
+      expect((await req('GET', `/api/images/${SHA}/display`, undefined, TOKEN_B)).status).toBe(404)
+    })
+
+    it('visibility=public macht die Tour für B sichtbar (inkl. Book und R2)', async () => {
+      const patch = await req('PATCH', `/api/tours/${tourId}`, { visibility: 'public' })
+      expect(patch.status).toBe(200)
+      expect(((await patch.json()) as Tour).visibility).toBe('public')
+
+      const shared = (await (
+        await req('GET', '/api/tours/shared', undefined, TOKEN_B)
+      ).json()) as (Tour & { owner_name: string | null })[]
+      const found = shared.find((t) => t.id === tourId)
+      expect(found).toBeDefined()
+      // USER_A existiert nicht im Neon-Auth-Verzeichnis → Name bleibt null.
+      expect(found!.owner_name).toBeNull()
+
+      expect((await req('GET', `/api/tours/${tourId}/cards`, undefined, TOKEN_B)).status).toBe(200)
+      expect((await req('GET', `/api/tours/${tourId}/images`, undefined, TOKEN_B)).status).toBe(200)
+      expect((await req('GET', `/api/images/${SHA}/display`, undefined, TOKEN_B)).status).toBe(200)
+    })
+
+    it('eigene Touren tauchen in /api/tours/shared nicht auf', async () => {
+      const own = (await (await req('GET', '/api/tours/shared')).json()) as Tour[]
+      expect(own.some((t) => t.id === tourId)).toBe(false)
+    })
+
+    it('öffentlich bleibt read-only: B kann nichts ändern oder hochladen', async () => {
+      expect(
+        (await req('PATCH', `/api/tours/${tourId}`, { name: 'gekapert' }, TOKEN_B)).status
+      ).toBe(404)
+      expect((await req('POST', '/api/cards', { tour_id: tourId }, TOKEN_B)).status).toBe(404)
+      expect(
+        (await req('PATCH', `/api/cards/${cardId}`, { title: 'fremd' }, TOKEN_B)).status
+      ).toBe(404)
+      expect((await req('DELETE', `/api/cards/${cardId}`, undefined, TOKEN_B)).status).toBe(404)
+      expect((await putVariantAs(TOKEN_B)).status).toBe(404)
+    })
+
+    it('zurück auf privat entzieht B den Zugriff wieder', async () => {
+      await req('PATCH', `/api/tours/${tourId}`, { visibility: 'private' })
+      expect((await req('GET', `/api/tours/${tourId}/cards`, undefined, TOKEN_B)).status).toBe(404)
+      expect((await req('GET', `/api/images/${SHA}/display`, undefined, TOKEN_B)).status).toBe(404)
+    })
+  })
+
   describe('Settings', () => {
     it('PUT + GET Roundtrip, Upsert überschreibt', async () => {
       await req('PUT', '/api/settings/map', { value: { layers: ['wanderwege'], zoom: 12 } })

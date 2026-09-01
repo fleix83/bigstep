@@ -14,6 +14,15 @@ export function useTours() {
   return useQuery({ queryKey: KEY, queryFn: () => api.listTours('updated') })
 }
 
+/** Öffentlich geteilte Touren anderer User («Von anderen geteilt», read-only). */
+export function useSharedTours() {
+  const api = useApi()
+  return useQuery({
+    queryKey: [...KEY, 'shared'],
+    queryFn: () => api.listSharedTours(),
+  })
+}
+
 interface OptimisticContext {
   previous: Tour[] | undefined
 }

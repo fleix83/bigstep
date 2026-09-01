@@ -11,6 +11,8 @@ export default tseslint.config(
       'drizzle/**',
       '**/src-tauri/target/**',
       '**/.wrangler/**',
+      // Service Worker: eigene Globals (self, caches), kein Modul-Kontext.
+      'apps/desktop/public/sw.js',
     ],
   },
   js.configs.recommended,
