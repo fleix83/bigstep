@@ -1,5 +1,13 @@
 # Changelog
 
+## Karten-Features: Ortssuche, Vollbild, Standort (2026-09-01)
+
+- Ortssuche in der Karte (Desktop + Mobile): GeoAdmin SearchServer (`type=locations`, sr=4326 — am 2026-09-01 verifiziert), debounced ab 2 Zeichen, Dropdown mit Objekttyp, Tastatur-Navigation; Auswahl fliegt die Karte an und setzt einen 📍-Pin.
+- Vollbild-Modus (⛶ auf der Karte): blendet Topbar, Tourenliste und Reiter aus — auf mobile füllt die Karte den ganzen Viewport; ✕ oder Escape verlässt das Vollbild.
+- Kartenoptionen-Panel einklappbar (▤); auf Smartphones startet es eingeklappt («möglichst viel Karte»).
+- Standort-Button unten rechts (MapLibre GeolocateControl, High-Accuracy, Follow-Modus mit Puck und Genauigkeitskreis) — v. a. für die mobile PWA; braucht Secure Context und einmalige Standort-Freigabe.
+- Tourenliste: geschätzte Wanderzeit als dritter Kennwert (🕓 neben km und ↑ m).
+
 ## Phase 7 – Mobile-PWA read-only (2026-09-01)
 
 - Gleiche React-Codebasis für Desktop und PWA (kein separates `packages/ui` nötig — die App baut ohnehin ohne Tauri; Entscheid statt PLAN 7.1-Auslagerung).

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Tour } from '@tourenbuch/shared'
 import { useTours, useTourMutations } from '../hooks/useTours'
-import { formatDistance, formatMeters } from '../lib/format'
+import { formatDistance, formatDuration, formatMeters } from '../lib/format'
 import { StatusBadge } from './StatusBadge'
 import { ConfirmDialog } from './ConfirmDialog'
 
@@ -213,6 +213,7 @@ function TourListItem({
       <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
         <span>{formatDistance(tour.distance_m)}</span>
         <span>↑ {formatMeters(tour.ascent_m)}</span>
+        <span>🕓 {formatDuration(tour.duration_min)}</span>
         {readOnly ? (
           <span className="ml-auto">
             <StatusBadge status={tour.status} />

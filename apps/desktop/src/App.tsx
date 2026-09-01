@@ -48,6 +48,7 @@ function Shell() {
   const { data: tours } = useTours()
   const selectedTour = tours?.find((t) => t.id === selectedId) ?? null
   const readOnly = useReadOnly()
+  const [fullscreen, setFullscreen] = useState(false)
   const [editing, setEditing] = useState(false)
   const editor = useRouteEditor(selectedTour, editing && !readOnly && tab === 'karte')
   const [highlightCardId, setHighlightCardId] = useState<string | null>(null)
@@ -75,6 +76,15 @@ function Shell() {
       alive = false
     }
   }, [tourImages])
+
+  useEffect(() => {
+    if (!fullscreen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullscreen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [fullscreen])
 
   const selectTour = (id: string | null) => {
     setEditing(false)
@@ -122,7 +132,9 @@ function Shell() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-2">
+      <header
+        className={`${fullscreen ? 'hidden' : 'flex'} items-center justify-between border-b border-gray-200 bg-white px-4 py-2`}
+      >
         <h1 className="text-base font-semibold text-gray-900">Tourenbuch</h1>
         <button
           className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100"
@@ -135,14 +147,18 @@ function Shell() {
 
       <div className="flex min-h-0 flex-1">
         {/* Mobil: Liste als Startscreen, Detail erst nach Tour-Wahl (PRD F6). */}
-        <div className={`${selectedId ? 'hidden md:flex' : 'flex'} min-h-0 w-full md:w-auto`}>
+        <div
+          className={`${fullscreen ? 'hidden' : selectedId ? 'hidden md:flex' : 'flex'} min-h-0 w-full md:w-auto`}
+        >
           <TourList selectedId={selectedId} onSelect={selectTour} readOnly={readOnly} />
         </div>
 
         <main
-          className={`${selectedId ? 'flex' : 'hidden md:flex'} min-w-0 flex-1 flex-col`}
+          className={`${fullscreen || selectedId ? 'flex' : 'hidden md:flex'} min-w-0 flex-1 flex-col`}
         >
-          <nav className="flex items-center border-b border-gray-200 bg-white">
+          <nav
+            className={`${fullscreen ? 'hidden' : 'flex'} items-center border-b border-gray-200 bg-white`}
+          >
             {selectedId && (
               <button
                 className="px-3 py-2 text-sm text-blue-700 md:hidden"
@@ -206,9 +222,12 @@ function Shell() {
               editor={editor}
               photos={photoPins}
               onPhotoClick={(cardId) => {
+                setFullscreen(false)
                 setTab('book')
                 setHighlightCardId(cardId)
               }}
+              fullscreen={fullscreen}
+              onToggleFullscreen={() => setFullscreen((f) => !f)}
             />
 
             {/* Editor-Toolbar */}

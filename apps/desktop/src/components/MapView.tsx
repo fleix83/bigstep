@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AttributionControl,
+  GeolocateControl,
   Map as MaplibreMap,
   Marker,
   NavigationControl,
@@ -24,6 +25,9 @@ import {
 } from '../lib/geo-layers'
 import { DEFAULT_MAP_STATE, parseMapState, type MapState } from '../lib/map-state'
 import type { RouteEditor } from '../hooks/useRouteEditor'
+import { MapSearch } from './MapSearch'
+import { useIsMobile } from '../lib/use-read-only'
+import type { LocationResult } from '../lib/geo-search'
 
 // MapLibre sucht seinen Worker relativ zu import.meta.url; nach Vites
 // Prebundling zeigt das auf .vite/deps/, wo das Worker-File fehlt — die Karte
@@ -53,6 +57,9 @@ interface Props {
   /** Foto-Pins (Bilder mit GPS) der aktiven Tour. */
   photos?: PhotoPin[]
   onPhotoClick?: (cardId: string) => void
+  /** Karten-Vollbild (Shell blendet Topbar/Sidebar/Tabs aus). */
+  fullscreen?: boolean
+  onToggleFullscreen?: () => void
 }
 
 export interface PhotoPin {
@@ -163,7 +170,12 @@ export function MapView({
   editor = null,
   photos = [],
   onPhotoClick,
+  fullscreen = false,
+  onToggleFullscreen,
 }: Props) {
+  const isMobile = useIsMobile()
+  // Layer-Panel: auf dem Smartphone eingeklappt starten («möglichst viel Karte»).
+  const [panelOpen, setPanelOpen] = useState(!isMobile)
   const api = useApi()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MaplibreMap | null>(null)
@@ -245,6 +257,16 @@ export function MapView({
       new AttributionControl({ compact: false, customAttribution: '© swisstopo' })
     )
     map.addControl(new NavigationControl({ showCompass: false }), 'top-left')
+    // Standort-Button unten rechts (v. a. mobile PWA): GPS-Position mit
+    // Puck und Genauigkeitskreis; braucht Secure Context (https/localhost).
+    map.addControl(
+      new GeolocateControl({
+        positionOptions: { enableHighAccuracy: true },
+        trackUserLocation: true,
+        showUserLocation: true,
+      }),
+      'bottom-right'
+    )
     // `style.load` feuert, sobald Quellen/Layer bereit sind — `load` würde
     // zusätzlich auf sämtliche initialen Kacheln warten.
     map.on('style.load', () => setReady(true))
@@ -392,6 +414,21 @@ export function MapView({
     }
   }, [photos, ready])
 
+  // Ortssuche: Treffer anfliegen und mit einem Pin markieren.
+  const searchMarkerRef = useRef<Marker | null>(null)
+  const handleSearchPick = (r: LocationResult) => {
+    const map = mapRef.current
+    if (!map) return
+    searchMarkerRef.current?.remove()
+    const el = document.createElement('div')
+    el.textContent = '📍'
+    el.style.cssText = 'font-size:26px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))'
+    searchMarkerRef.current = new Marker({ element: el, anchor: 'bottom' })
+      .setLngLat([r.lon, r.lat])
+      .addTo(map)
+    map.flyTo({ center: [r.lon, r.lat], zoom: Math.max(map.getZoom(), r.zoom), duration: 1200 })
+  }
+
   // Fadenkreuz-Cursor im Editor-Modus.
   useEffect(() => {
     const map = mapRef.current
@@ -453,17 +490,42 @@ export function MapView({
     )
   }, [tour?.id, tour?.bbox, ready])
 
-  // Nach Reiterwechsel hat sich die Containergrösse ggf. geändert.
+  // Nach Reiter- oder Vollbild-Wechsel hat sich die Containergrösse geändert.
   useEffect(() => {
     if (visible) mapRef.current?.resize()
-  }, [visible])
+  }, [visible, fullscreen])
 
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
 
-      {ui && (
-        <div className="absolute right-2 top-2 z-10 w-48 rounded-lg border border-gray-200 bg-white/95 p-3 shadow-md">
+      {/* Ortssuche: mittig auf Desktop, volle Breite auf dem Smartphone. */}
+      <div className="absolute left-12 right-24 top-2 z-10 md:left-1/2 md:right-auto md:w-80 md:-translate-x-1/2">
+        <MapSearch onPick={handleSearchPick} />
+      </div>
+
+      <div className="absolute right-2 top-2 z-10 flex flex-col items-end gap-2">
+        <div className="flex gap-1">
+          <button
+            className="rounded-lg border border-gray-200 bg-white/95 px-2.5 py-1.5 text-sm shadow-md hover:bg-gray-50"
+            title={panelOpen ? 'Kartenoptionen ausblenden' : 'Kartenoptionen einblenden'}
+            onClick={() => setPanelOpen((o) => !o)}
+          >
+            ▤
+          </button>
+          {onToggleFullscreen && (
+            <button
+              className="rounded-lg border border-gray-200 bg-white/95 px-2.5 py-1.5 text-sm shadow-md hover:bg-gray-50"
+              title={fullscreen ? 'Vollbild verlassen' : 'Karte im Vollbild'}
+              onClick={onToggleFullscreen}
+            >
+              {fullscreen ? '✕' : '⛶'}
+            </button>
+          )}
+        </div>
+
+      {ui && panelOpen && (
+        <div className="w-48 rounded-lg border border-gray-200 bg-white/95 p-3 shadow-md">
           <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
             Basiskarte
           </div>
@@ -509,6 +571,7 @@ export function MapView({
           </div>
         </div>
       )}
+      </div>
 
       {tour && !tour.geometry && !editor && (
         <div className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-md bg-gray-900/80 px-3 py-1.5 text-sm text-white shadow">
