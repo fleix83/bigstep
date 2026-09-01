@@ -7,7 +7,7 @@
 - Desktop-Upload-Queue (`useUploadQueue`): lädt alle pending-Bilder hoch (display + thumb), setzt danach `r2_key_*` und `upload_state='uploaded'`; Retry mit exponentiellem Backoff pro Bild, Poll alle 30 s, Status-Badge im Header («☁︎ lädt hoch …»). Geräte ohne lokale Ableitungen überspringen fremde pending-Bilder.
 - Anzeige (`resolveImageUrls`): zuerst lokale Ableitungen, sonst authentifiziert aus R2 — damit erscheinen Bilder in der PWA und auf Zweitgeräten; Foto-Pins nutzen denselben Weg. E2E verifiziert: Desktop lädt hoch, die PWA (frische Origin, leeres OPFS) zeigt alle Bilder ohne weiteres Zutun.
 - Bewusst NICHT verwendet: die öffentliche r2.dev-Bucket-URL — sie würde alle Fotos ungeschützt ins Netz stellen und ist laut Cloudflare nicht für Produktion gedacht; die Auslieferung bleibt hinter dem Bearer-Token. Empfehlung: Public Access am Bucket deaktivieren.
-- Deployment vorbereitet (Assets + Worker + R2 in einer wrangler.toml); ausstehend nur `wrangler login`, `wrangler secret put DATABASE_URL/API_TOKEN`, `wrangler deploy`.
+- **Deployed:** Worker + PWA + R2 live unter https://tourenbuch-api.topos-ch.workers.dev (workers.dev-Subdomain «topos-ch», da «topos» global vergeben; Secrets via `wrangler secret put`). Die vorhandenen Ableitungen wurden einmalig aus dem lokalen OPFS in den Bucket übertragen; Produktions-Smoke-Test inkl. PWA mit Bildern aus dem echten R2 bestanden.
 
 ## Karten-Features: Ortssuche, Vollbild, Standort (2026-09-01)
 
