@@ -1,5 +1,14 @@
 # Changelog
 
+## Phase 8 – Cloudflare R2 (2026-09-01)
+
+- R2-Binding «topos» im Worker; Keys content-addressed (`images/<sha256>/<display|thumb>`) — PUTs idempotent, ein abgebrochener Upload hinterlässt keinen inkonsistenten Zustand.
+- Endpunkte: `PUT/GET /api/images/:sha256/:variant` (Auth wie übrig; GET mit `Cache-Control: private, max-age=1y, immutable`, Content-Type aus R2), `GET /api/images[?state=…]` für die Upload-Queue (Bilder soft-gelöschter Cards ausgenommen), `POST /api/admin/r2-cleanup` (Dry-Run default, `?dry=0` löscht Waisen); Bild-DELETE entsorgt die R2-Objekte mit. 5 neue Tests mit In-Memory-R2-Mock (32 API-Tests).
+- Desktop-Upload-Queue (`useUploadQueue`): lädt alle pending-Bilder hoch (display + thumb), setzt danach `r2_key_*` und `upload_state='uploaded'`; Retry mit exponentiellem Backoff pro Bild, Poll alle 30 s, Status-Badge im Header («☁︎ lädt hoch …»). Geräte ohne lokale Ableitungen überspringen fremde pending-Bilder.
+- Anzeige (`resolveImageUrls`): zuerst lokale Ableitungen, sonst authentifiziert aus R2 — damit erscheinen Bilder in der PWA und auf Zweitgeräten; Foto-Pins nutzen denselben Weg. E2E verifiziert: Desktop lädt hoch, die PWA (frische Origin, leeres OPFS) zeigt alle Bilder ohne weiteres Zutun.
+- Bewusst NICHT verwendet: die öffentliche r2.dev-Bucket-URL — sie würde alle Fotos ungeschützt ins Netz stellen und ist laut Cloudflare nicht für Produktion gedacht; die Auslieferung bleibt hinter dem Bearer-Token. Empfehlung: Public Access am Bucket deaktivieren.
+- Deployment vorbereitet (Assets + Worker + R2 in einer wrangler.toml); ausstehend nur `wrangler login`, `wrangler secret put DATABASE_URL/API_TOKEN`, `wrangler deploy`.
+
 ## Karten-Features: Ortssuche, Vollbild, Standort (2026-09-01)
 
 - Ortssuche in der Karte (Desktop + Mobile): GeoAdmin SearchServer (`type=locations`, sr=4326 — am 2026-09-01 verifiziert), debounced ab 2 Zeichen, Dropdown mit Objekttyp, Tastatur-Navigation; Auswahl fliegt die Karte an und setzt einen 📍-Pin.

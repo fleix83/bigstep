@@ -279,9 +279,119 @@ app.delete('/api/images/:id', async (c) => {
   const [row] = await db
     .delete(images)
     .where(eq(images.id, id))
-    .returning({ id: images.id })
+    .returning({ id: images.id, sha256: images.sha256 })
   if (!row) throw new ApiError(404, 'not_found', 'Bild nicht gefunden')
+  // Zugehörige R2-Ableitungen mitentsorgen (best effort; Rest fängt der Cleanup).
+  await Promise.allSettled([
+    c.env.R2.delete(`images/${row.sha256}/display`),
+    c.env.R2.delete(`images/${row.sha256}/thumb`),
+  ])
   return c.body(null, 204)
+})
+
+// ---------------------------------------------------------------------------
+// Bild-Binärdaten in R2 (Phase 8). Keys sind content-addressed
+// (images/<sha256>/<variant>), PUTs damit idempotent — ein abgebrochener
+// Upload hinterlässt keinen inkonsistenten Zustand, der nächste Versuch
+// überschreibt dasselbe Objekt.
+// ---------------------------------------------------------------------------
+
+const R2_VARIANTS = ['display', 'thumb'] as const
+type R2Variant = (typeof R2_VARIANTS)[number]
+const MAX_VARIANT_BYTES = 15 * 1024 * 1024
+
+function shaParam(raw: string): string {
+  if (!/^[0-9a-f]{64}$/.test(raw)) {
+    throw new ApiError(400, 'validation_error', 'Ungültige sha256')
+  }
+  return raw
+}
+
+function variantParam(raw: string): R2Variant {
+  if (!(R2_VARIANTS as readonly string[]).includes(raw)) {
+    throw new ApiError(400, 'validation_error', 'variant muss display oder thumb sein')
+  }
+  return raw as R2Variant
+}
+
+const r2Key = (sha: string, variant: R2Variant) => `images/${sha}/${variant}`
+
+/**
+ * Liste der Bild-Metadaten, optional nach upload_state gefiltert (Upload-
+ * Queue). Bilder soft-gelöschter Cards bleiben aussen vor — sie sollen weder
+ * hochgeladen noch angezeigt werden (der r2-cleanup räumt ihre Objekte ab).
+ */
+app.get('/api/images', async (c) => {
+  const state = c.req.query('state')
+  const db = getDb(c.env)
+  const rows = await db
+    .select({ image: images })
+    .from(images)
+    .innerJoin(cards, eq(images.card_id, cards.id))
+    .where(
+      state
+        ? and(isNull(cards.deleted_at), eq(images.upload_state, state))
+        : isNull(cards.deleted_at)
+    )
+  return c.json(rows.map((r) => r.image))
+})
+
+app.put('/api/images/:sha256/:variant', async (c) => {
+  const sha = shaParam(c.req.param('sha256'))
+  const variant = variantParam(c.req.param('variant'))
+  const contentType = c.req.header('content-type') ?? ''
+  if (!contentType.startsWith('image/')) {
+    throw new ApiError(400, 'validation_error', 'Content-Type muss image/* sein')
+  }
+  const body = await c.req.arrayBuffer()
+  if (body.byteLength === 0) {
+    throw new ApiError(400, 'validation_error', 'Leerer Body')
+  }
+  if (body.byteLength > MAX_VARIANT_BYTES) {
+    throw new ApiError(413, 'too_large', 'Ableitung grösser als 15 MB')
+  }
+  const key = r2Key(sha, variant)
+  await c.env.R2.put(key, body, { httpMetadata: { contentType } })
+  return c.json({ key })
+})
+
+app.get('/api/images/:sha256/:variant', async (c) => {
+  const sha = shaParam(c.req.param('sha256'))
+  const variant = variantParam(c.req.param('variant'))
+  const obj = await c.env.R2.get(r2Key(sha, variant))
+  if (!obj) throw new ApiError(404, 'not_found', 'Ableitung nicht in R2')
+  return new Response(obj.body, {
+    headers: {
+      'Content-Type': obj.httpMetadata?.contentType ?? 'application/octet-stream',
+      // Content-addressed ⇒ unveränderlich; privat wegen Bearer-Token.
+      'Cache-Control': 'private, max-age=31536000, immutable',
+    },
+  })
+})
+
+/**
+ * Cleanup (PLAN 8.5): R2-Objekte ohne DB-Referenz auflisten bzw. löschen.
+ * Default ist Dry-Run; `?dry=0` löscht wirklich.
+ */
+app.post('/api/admin/r2-cleanup', async (c) => {
+  const dryRun = c.req.query('dry') !== '0'
+  const db = getDb(c.env)
+  const rows = await db.select({ sha256: images.sha256 }).from(images)
+  const known = new Set(rows.map((r) => r.sha256))
+  const orphans: string[] = []
+  let cursor: string | undefined
+  do {
+    const listing = await c.env.R2.list({ prefix: 'images/', cursor })
+    for (const obj of listing.objects) {
+      const sha = obj.key.split('/')[1]
+      if (!sha || !known.has(sha)) {
+        orphans.push(obj.key)
+        if (!dryRun) await c.env.R2.delete(obj.key)
+      }
+    }
+    cursor = listing.truncated ? listing.cursor : undefined
+  } while (cursor)
+  return c.json({ dryRun, orphans })
 })
 
 // ---------------------------------------------------------------------------

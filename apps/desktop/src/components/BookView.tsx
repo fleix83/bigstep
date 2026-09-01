@@ -3,7 +3,8 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import type { Card, Image } from '@tourenbuch/shared'
 import { useCards, useCardMutations, useTourImages } from '../hooks/useCards'
-import { findDerivatives, type DerivativeUrls } from '../lib/image-store'
+import { useApi } from '../lib/api'
+import { resolveImageUrls, type DerivativeUrls } from '../lib/image-store'
 import { ConfirmDialog } from './ConfirmDialog'
 
 interface Props {
@@ -357,16 +358,17 @@ function ImageThumb({
   onOpen: (displayUrl: string) => void
   onDelete: () => void
 }) {
+  const api = useApi()
   const [urls, setUrls] = useState<DerivativeUrls | null | 'loading'>('loading')
   useEffect(() => {
     let alive = true
-    void findDerivatives(image.sha256).then((u) => {
+    void resolveImageUrls(image, api).then((u) => {
       if (alive) setUrls(u)
     })
     return () => {
       alive = false
     }
-  }, [image.sha256])
+  }, [image, api])
 
   if (urls === 'loading') {
     return <div className="h-16 w-16 animate-pulse rounded bg-gray-100" />
@@ -375,9 +377,10 @@ function ImageThumb({
     return (
       <div
         className="flex h-16 w-16 items-center justify-center rounded bg-gray-100 text-center text-[10px] leading-tight text-gray-400"
-        title="Ableitung nicht lokal vorhanden (Sync folgt mit R2, Phase 8)"
+        title="Bild noch nicht synchronisiert (Upload vom Ursprungsgerät ausstehend)"
       >
-        nicht lokal
+        noch nicht
+        synchron
       </div>
     )
   }

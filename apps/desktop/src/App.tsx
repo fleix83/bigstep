@@ -17,7 +17,8 @@ import { useTours } from './hooks/useTours'
 import { useReadOnly } from './lib/use-read-only'
 import { useRouteEditor } from './hooks/useRouteEditor'
 import { useTourImages } from './hooks/useCards'
-import { findDerivatives } from './lib/image-store'
+import { useUploadQueue } from './hooks/useUploadQueue'
+import { resolveImageUrls } from './lib/image-store'
 import type { PhotoPin } from './components/MapView'
 
 type Tab = 'karte' | 'book'
@@ -48,6 +49,8 @@ function Shell() {
   const { data: tours } = useTours()
   const selectedTour = tours?.find((t) => t.id === selectedId) ?? null
   const readOnly = useReadOnly()
+  // Upload-Queue nur im Editier-Kontext (Desktop); die PWA lädt nur an.
+  const uploadStatus = useUploadQueue(!readOnly && config !== null)
   const [fullscreen, setFullscreen] = useState(false)
   const [editing, setEditing] = useState(false)
   const editor = useRouteEditor(selectedTour, editing && !readOnly && tab === 'karte')
@@ -67,7 +70,7 @@ function Shell() {
         cardId: i.card_id,
         lon: i.lon!,
         lat: i.lat!,
-        thumbUrl: (await findDerivatives(i.sha256))?.thumb ?? null,
+        thumbUrl: (await resolveImageUrls(i, api))?.thumb ?? null,
       }))
     ).then((pins) => {
       if (alive) setPhotoPins(pins)
@@ -75,7 +78,7 @@ function Shell() {
     return () => {
       alive = false
     }
-  }, [tourImages])
+  }, [tourImages, api])
 
   useEffect(() => {
     if (!fullscreen) return
@@ -136,6 +139,14 @@ function Shell() {
         className={`${fullscreen ? 'hidden' : 'flex'} items-center justify-between border-b border-gray-200 bg-white px-4 py-2`}
       >
         <h1 className="text-base font-semibold text-gray-900">Tourenbuch</h1>
+        {uploadStatus.pending > 0 && (
+          <span
+            className="ml-3 mr-auto rounded-full bg-blue-50 px-2.5 py-0.5 text-xs text-blue-700"
+            title="Bilder werden nach R2 hochgeladen"
+          >
+            ☁︎ {uploadStatus.uploading ? 'lädt hoch …' : 'ausstehend:'} {uploadStatus.pending}
+          </span>
+        )}
         <button
           className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100"
           title="Einstellungen"

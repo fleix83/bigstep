@@ -8,7 +8,37 @@ import app from '../src/index'
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL
 const TOKEN = 'test-token-phase1'
 
-const env = { DATABASE_URL: TEST_DATABASE_URL ?? '', API_TOKEN: TOKEN }
+/** In-Memory-Ersatz für das R2-Binding (nur die genutzten Methoden). */
+class MemR2 {
+  store = new Map<string, { body: ArrayBuffer; contentType?: string }>()
+  async put(key: string, value: ArrayBuffer, opts?: { httpMetadata?: { contentType?: string } }) {
+    this.store.set(key, { body: value, contentType: opts?.httpMetadata?.contentType })
+  }
+  async get(key: string) {
+    const entry = this.store.get(key)
+    if (!entry) return null
+    return {
+      body: new Blob([entry.body]).stream(),
+      httpMetadata: { contentType: entry.contentType },
+    }
+  }
+  async delete(key: string) {
+    this.store.delete(key)
+  }
+  async list(opts?: { prefix?: string; cursor?: string }) {
+    const objects = [...this.store.keys()]
+      .filter((k) => k.startsWith(opts?.prefix ?? ''))
+      .map((key) => ({ key }))
+    return { objects, truncated: false as const }
+  }
+}
+
+const memR2 = new MemR2()
+const env = {
+  DATABASE_URL: TEST_DATABASE_URL ?? '',
+  API_TOKEN: TOKEN,
+  R2: memR2 as unknown as R2Bucket,
+}
 
 function req(method: string, path: string, body?: unknown, token: string | null = TOKEN) {
   const headers: Record<string, string> = {}
@@ -254,6 +284,89 @@ describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
         await req('GET', `/api/tours/${tourId}/images`)
       ).json()) as unknown[]
       expect(rows).toHaveLength(0)
+    })
+  })
+
+  describe('R2-Ableitungen', () => {
+    let cardId: string
+    let imageId: string
+    const SHA = 'c'.repeat(64)
+    const ORPHAN_SHA = 'd'.repeat(64)
+    const bytes = new Uint8Array([1, 2, 3, 4, 5])
+
+    function putVariant(sha: string, variant: string, body: Uint8Array, type = 'image/webp') {
+      return app.request(
+        `/api/images/${sha}/${variant}`,
+        {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': type },
+          body,
+        },
+        env
+      )
+    }
+
+    beforeAll(async () => {
+      const tour = (await (
+        await req('POST', '/api/tours', { name: 'R2-Testtour' })
+      ).json()) as Tour
+      const card = (await (
+        await req('POST', '/api/cards', { tour_id: tour.id, title: 'R2' })
+      ).json()) as Card
+      cardId = card.id
+      const img = (await (
+        await req('POST', '/api/images', { card_id: cardId, sha256: SHA })
+      ).json()) as { id: string }
+      imageId = img.id
+    })
+
+    it('PUT lädt eine Ableitung nach R2, GET liefert sie mit Content-Type zurück', async () => {
+      const put = await putVariant(SHA, 'display', bytes)
+      expect(put.status).toBe(200)
+      expect(((await put.json()) as { key: string }).key).toBe(`images/${SHA}/display`)
+
+      const get = await req('GET', `/api/images/${SHA}/display`)
+      expect(get.status).toBe(200)
+      expect(get.headers.get('content-type')).toBe('image/webp')
+      expect(get.headers.get('cache-control')).toContain('immutable')
+      expect(new Uint8Array(await get.arrayBuffer())).toEqual(bytes)
+    })
+
+    it('validiert sha, variant und Content-Type', async () => {
+      expect((await req('GET', '/api/images/zu-kurz/display')).status).toBe(400)
+      expect((await req('GET', `/api/images/${SHA}/original`)).status).toBe(400)
+      expect((await putVariant(SHA, 'thumb', bytes, 'text/plain')).status).toBe(400)
+      expect((await req('GET', `/api/images/${'e'.repeat(64)}/display`)).status).toBe(404)
+    })
+
+    it('GET /api/images?state=pending listet fürs Upload-Queueing', async () => {
+      const res = await req('GET', '/api/images?state=pending')
+      const rows = (await res.json()) as { id: string }[]
+      expect(rows.some((r) => r.id === imageId)).toBe(true)
+    })
+
+    it('r2-cleanup listet Waisen im Dry-Run und löscht mit dry=0', async () => {
+      await putVariant(ORPHAN_SHA, 'thumb', bytes)
+      const dry = (await (
+        await req('POST', '/api/admin/r2-cleanup')
+      ).json()) as { dryRun: boolean; orphans: string[] }
+      expect(dry.dryRun).toBe(true)
+      expect(dry.orphans).toContain(`images/${ORPHAN_SHA}/thumb`)
+      expect(dry.orphans).not.toContain(`images/${SHA}/display`)
+
+      const real = (await (
+        await req('POST', '/api/admin/r2-cleanup?dry=0')
+      ).json()) as { orphans: string[] }
+      expect(real.orphans).toContain(`images/${ORPHAN_SHA}/thumb`)
+      expect((await req('GET', `/api/images/${ORPHAN_SHA}/thumb`)).status).toBe(404)
+    })
+
+    it('DELETE /api/images/:id entfernt auch die R2-Objekte', async () => {
+      await putVariant(SHA, 'thumb', bytes)
+      const res = await req('DELETE', `/api/images/${imageId}`)
+      expect(res.status).toBe(204)
+      expect((await req('GET', `/api/images/${SHA}/display`)).status).toBe(404)
+      expect((await req('GET', `/api/images/${SHA}/thumb`)).status).toBe(404)
     })
   })
 

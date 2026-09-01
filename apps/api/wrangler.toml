@@ -11,6 +11,13 @@ directory = "../desktop/dist"
 not_found_handling = "single-page-application"
 run_worker_first = ["/api/*"]
 
+# Phase 8: R2-Bucket für die Bild-Ableitungen (content-addressed:
+# images/<sha256>/<display|thumb>). Lokal simuliert `wrangler dev` den
+# Bucket; produktiv zeigt das Binding auf den Bucket «topos».
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "topos"
+
 # Secrets (nie hier eintragen!):
 #   lokal:      apps/api/.dev.vars  (DATABASE_URL, API_TOKEN)
 #   Produktion: wrangler secret put DATABASE_URL / API_TOKEN

@@ -134,3 +134,81 @@ export async function removeDerivatives(sha: string): Promise<void> {
 export async function hasDerivatives(sha: string): Promise<boolean> {
   return (await findDerivatives(sha)) !== null
 }
+
+// --- R2-Sync (Phase 8) -------------------------------------------------------
+
+export interface DerivativeBlobs {
+  display: Blob
+  thumb: Blob
+}
+
+const extContentType = { webp: 'image/webp', jpg: 'image/jpeg' } as const
+
+/** Lokale Ableitungen als Blobs (für den Upload nach R2); null wenn nicht da. */
+export async function getDerivativeBlobs(sha: string): Promise<DerivativeBlobs | null> {
+  if (isTauri()) {
+    const { exists, readFile, BaseDirectory } = await import('@tauri-apps/plugin-fs')
+    for (const ext of ['webp', 'jpg'] as const) {
+      if (await exists(`images/${sha}_display.${ext}`, { baseDir: BaseDirectory.AppData })) {
+        const type = extContentType[ext]
+        const [display, thumb] = await Promise.all([
+          readFile(`images/${sha}_display.${ext}`, { baseDir: BaseDirectory.AppData }),
+          readFile(`images/${sha}_thumb.${ext}`, { baseDir: BaseDirectory.AppData }),
+        ])
+        return {
+          display: new Blob([display as BlobPart], { type }),
+          thumb: new Blob([thumb as BlobPart], { type }),
+        }
+      }
+    }
+    return null
+  }
+  for (const ext of ['webp', 'jpg'] as const) {
+    const display = await opfsFile(`${sha}_display.${ext}`)
+    if (display) {
+      const thumb = await opfsFile(`${sha}_thumb.${ext}`)
+      if (!thumb) return null
+      return { display, thumb }
+    }
+  }
+  return null
+}
+
+interface RemoteImageRef {
+  sha256: string
+  upload_state: string
+}
+
+interface RemoteFetcher {
+  fetchImageVariant(sha256: string, variant: 'display' | 'thumb'): Promise<Blob>
+}
+
+/**
+ * Anzeige-URLs für ein Bild: zuerst lokale Ableitungen, sonst — wenn das Bild
+ * bereits in R2 liegt — über die authentifizierte GET-Route laden (PWA bzw.
+ * Zweitgerät). Geladene Remote-Blobs landen im selben URL-Cache.
+ */
+export async function resolveImageUrls(
+  image: RemoteImageRef,
+  api: RemoteFetcher
+): Promise<DerivativeUrls | null> {
+  const local = await findDerivatives(image.sha256)
+  if (local) return local
+  if (image.upload_state !== 'uploaded') return null
+  const cached = urlCache.get(image.sha256)
+  if (cached) return cached
+  try {
+    const [display, thumb] = await Promise.all([
+      api.fetchImageVariant(image.sha256, 'display'),
+      api.fetchImageVariant(image.sha256, 'thumb'),
+    ])
+    const urls = {
+      display: URL.createObjectURL(display),
+      thumb: URL.createObjectURL(thumb),
+    }
+    urlCache.set(image.sha256, urls)
+    return urls
+  } catch {
+    return null
+  }
+}

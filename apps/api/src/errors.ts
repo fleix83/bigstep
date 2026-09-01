@@ -4,7 +4,7 @@ import { z } from 'zod'
 /** Einheitliches Fehlerformat: { error: { code, message } } (PLAN Phase 1.4). */
 export class ApiError extends Error {
   constructor(
-    public status: 400 | 401 | 404 | 409 | 500,
+    public status: 400 | 401 | 404 | 409 | 413 | 500,
     public code: string,
     message: string
   ) {

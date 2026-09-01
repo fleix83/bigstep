@@ -115,6 +115,38 @@ export class ApiClient {
     return this.request('DELETE', `/api/images/${id}`, null)
   }
 
+  // Bild-Binärdaten (R2, Phase 8)
+  listImages(state?: 'pending' | 'uploaded' | 'failed'): Promise<Image[]> {
+    const suffix = state ? `?state=${state}` : ''
+    return this.request('GET', `/api/images${suffix}`, z.array(imageSchema))
+  }
+
+  async uploadImageVariant(
+    sha256: string,
+    variant: 'display' | 'thumb',
+    blob: Blob
+  ): Promise<void> {
+    const doFetch = this.config.fetchImpl ?? fetch
+    const res = await doFetch(`${this.config.baseUrl}/api/images/${sha256}/${variant}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${this.config.token}`,
+        'Content-Type': blob.type || 'application/octet-stream',
+      },
+      body: blob,
+    })
+    if (!res.ok) throw new ApiRequestError(res.status, 'upload_failed', `HTTP ${res.status}`)
+  }
+
+  async fetchImageVariant(sha256: string, variant: 'display' | 'thumb'): Promise<Blob> {
+    const doFetch = this.config.fetchImpl ?? fetch
+    const res = await doFetch(`${this.config.baseUrl}/api/images/${sha256}/${variant}`, {
+      headers: { Authorization: `Bearer ${this.config.token}` },
+    })
+    if (!res.ok) throw new ApiRequestError(res.status, 'download_failed', `HTTP ${res.status}`)
+    return res.blob()
+  }
+
   // Settings
   getSettings(): Promise<Record<string, unknown>> {
     return this.request('GET', '/api/settings', z.record(z.string(), z.unknown()))
