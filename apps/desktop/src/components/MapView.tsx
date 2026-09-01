@@ -198,6 +198,25 @@ export function MapView({
   })
   const settingsDone = settingsQuery.isSuccess || settingsQuery.isError
 
+  // Erste per-User-Einstellung (Neon Auth): Farbe der Routenlinie.
+  const [routeColor, setRouteColor] = useState('#2563eb')
+  const routeColorInit = useRef(false)
+  const routeColorSaveTimer = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (routeColorInit.current || !settingsQuery.isSuccess) return
+    routeColorInit.current = true
+    const appearance = settingsQuery.data?.appearance as { routeColor?: string } | undefined
+    if (appearance?.routeColor) setRouteColor(appearance.routeColor)
+  }, [settingsQuery.isSuccess, settingsQuery.data])
+
+  const handleRouteColor = (color: string) => {
+    setRouteColor(color)
+    window.clearTimeout(routeColorSaveTimer.current)
+    routeColorSaveTimer.current = window.setTimeout(() => {
+      api.putSetting('appearance', { routeColor: color }).catch(() => {})
+    }, 500)
+  }
+
   const saveTimer = useRef<number | undefined>(undefined)
   const lastSaved = useRef('')
   const scheduleSave = useCallback(() => {
@@ -433,6 +452,24 @@ export function MapView({
     map.flyTo({ center: [r.lon, r.lat], zoom: Math.max(map.getZoom(), r.zoom), duration: 1200 })
   }
 
+  // Routenfarbe auf die Linien-Layer anwenden (live + nach Style-Load).
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    const apply = () => {
+      map.setPaintProperty('active-tour-line', 'line-color', routeColor)
+      map.setPaintProperty('active-tour-dashed', 'line-color', routeColor)
+    }
+    if (map.isStyleLoaded()) {
+      apply()
+      return
+    }
+    map.once('idle', apply)
+    return () => {
+      map.off('idle', apply)
+    }
+  }, [routeColor, ready])
+
   // Fadenkreuz-Cursor im Editor-Modus.
   useEffect(() => {
     const map = mapRef.current
@@ -571,6 +608,16 @@ export function MapView({
                 onChange={(e) => setUi({ ...ui, showOthers: e.target.checked })}
               />
               Andere Touren
+            </label>
+            <label className="flex items-center justify-between gap-2 py-1 text-sm">
+              Routenfarbe
+              <input
+                type="color"
+                value={routeColor}
+                onChange={(e) => handleRouteColor(e.target.value)}
+                className="h-6 w-10 cursor-pointer rounded border border-gray-200"
+                title="Farbe der Routenlinie (pro Konto gespeichert)"
+              />
             </label>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import {
   pgTable,
+  primaryKey,
   uuid,
   text,
   integer,
@@ -14,6 +15,8 @@ import type { BBox, LineString, LonLat } from '../types'
 
 export const tours = pgTable('tours', {
   id: uuid('id').primaryKey().defaultRandom(),
+  // Neon-Auth-User (JWT `sub`); jede Tour gehört genau einem User.
+  user_id: text('user_id').notNull(),
   name: text('name').notNull(),
   status: text('status').notNull().default('geplant'), // 'geplant' | 'gemacht'
   geometry: jsonb('geometry').$type<LineString>(),
@@ -68,7 +71,12 @@ export const images = pgTable('images', {
     .defaultNow(),
 })
 
-export const settings = pgTable('settings', {
-  key: text('key').primaryKey(),
-  value: jsonb('value').notNull(),
-})
+export const settings = pgTable(
+  'settings',
+  {
+    user_id: text('user_id').notNull(),
+    key: text('key').notNull(),
+    value: jsonb('value').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.user_id, t.key] })]
+)

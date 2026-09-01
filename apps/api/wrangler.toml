@@ -9,7 +9,7 @@ compatibility_date = "2026-08-01"
 [assets]
 directory = "../desktop/dist"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*"]
+run_worker_first = ["/api/*", "/neon-auth/*"]
 
 # Phase 8: R2-Bucket für die Bild-Ableitungen (content-addressed:
 # images/<sha256>/<display|thumb>). Lokal simuliert `wrangler dev` den
@@ -17,6 +17,10 @@ run_worker_first = ["/api/*"]
 [[r2_buckets]]
 binding = "R2"
 bucket_name = "topos"
+
+[vars]
+# Managed Better Auth (Neon Auth) – Basis-URL; JWKS unter /.well-known/jwks.json.
+NEON_AUTH_URL = "https://ep-frosty-star-b2kyy6mv.neonauth.c-6.eu-central-1.aws.neon.tech/neondb/auth"
 
 # Secrets (nie hier eintragen!):
 #   lokal:      apps/api/.dev.vars  (DATABASE_URL, API_TOKEN)

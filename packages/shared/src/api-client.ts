@@ -16,7 +16,8 @@ import {
 
 export interface ApiClientConfig {
   baseUrl: string
-  token: string
+  /** Statisches Token oder Provider (z. B. frisches Neon-Auth-JWT je Request). */
+  token: string | (() => Promise<string>)
   fetchImpl?: typeof fetch
 }
 
@@ -41,6 +42,11 @@ const errorBodySchema = z.object({
 export class ApiClient {
   constructor(private config: ApiClientConfig) {}
 
+  private async bearer(): Promise<string> {
+    const t = this.config.token
+    return typeof t === 'function' ? t() : t
+  }
+
   private async request<T>(
     method: string,
     path: string,
@@ -51,7 +57,7 @@ export class ApiClient {
     const res = await doFetch(`${this.config.baseUrl}${path}`, {
       method,
       headers: {
-        Authorization: `Bearer ${this.config.token}`,
+        Authorization: `Bearer ${await this.bearer()}`,
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -130,7 +136,7 @@ export class ApiClient {
     const res = await doFetch(`${this.config.baseUrl}/api/images/${sha256}/${variant}`, {
       method: 'PUT',
       headers: {
-        Authorization: `Bearer ${this.config.token}`,
+        Authorization: `Bearer ${await this.bearer()}`,
         'Content-Type': blob.type || 'application/octet-stream',
       },
       body: blob,
@@ -141,7 +147,7 @@ export class ApiClient {
   async fetchImageVariant(sha256: string, variant: 'display' | 'thumb'): Promise<Blob> {
     const doFetch = this.config.fetchImpl ?? fetch
     const res = await doFetch(`${this.config.baseUrl}/api/images/${sha256}/${variant}`, {
-      headers: { Authorization: `Bearer ${this.config.token}` },
+      headers: { Authorization: `Bearer ${await this.bearer()}` },
     })
     if (!res.ok) throw new ApiRequestError(res.status, 'download_failed', `HTTP ${res.status}`)
     return res.blob()

@@ -7,13 +7,11 @@ interface Props {
   onClose?: () => void
 }
 
-/** Erfassung von API-URL und Bearer-Token (PLAN Phase 2.3). */
+/** Verbindungseinstellung: nur noch die API-URL (Login läuft über Neon Auth). */
 export function SettingsDialog({ initial, onSave, onClose }: Props) {
-  // PWA: eigene Origin ist der richtige Default (same-origin Auslieferung).
-  const [apiUrl, setApiUrl] = useState(initial?.apiUrl ?? (defaultApiUrl() || 'http://localhost:8787'))
-  const [token, setToken] = useState(initial?.token ?? '')
-
-  const valid = apiUrl.trim().length > 0 && token.trim().length > 0
+  const [apiUrl, setApiUrl] = useState(
+    initial?.apiUrl ?? (defaultApiUrl() || 'http://localhost:8787')
+  )
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -21,19 +19,15 @@ export function SettingsDialog({ initial, onSave, onClose }: Props) {
         <h2 className="mb-4 text-lg font-semibold text-gray-900">Verbindung einrichten</h2>
         <label className="mb-1 block text-sm font-medium text-gray-700">API-URL</label>
         <input
-          className="mb-3 w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+          className="mb-4 w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
           value={apiUrl}
           onChange={(e) => setApiUrl(e.target.value)}
-          placeholder="http://localhost:8787"
+          placeholder="https://tourenbuch-api.topos-ch.workers.dev"
         />
-        <label className="mb-1 block text-sm font-medium text-gray-700">API-Token</label>
-        <input
-          className="mb-4 w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-          type="password"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          placeholder="Bearer-Token"
-        />
+        <p className="mb-4 text-xs text-gray-500">
+          Anmeldung und Konten laufen über Neon Auth – nach dem Speichern erscheint der
+          Login.
+        </p>
         <div className="flex justify-end gap-2">
           {onClose && (
             <button
@@ -45,8 +39,8 @@ export function SettingsDialog({ initial, onSave, onClose }: Props) {
           )}
           <button
             className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            disabled={!valid}
-            onClick={() => onSave({ apiUrl: apiUrl.trim(), token: token.trim() })}
+            disabled={apiUrl.trim().length === 0}
+            onClick={() => onSave({ apiUrl: apiUrl.trim() })}
           >
             Speichern
           </button>

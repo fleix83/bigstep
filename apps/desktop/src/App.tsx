@@ -6,7 +6,7 @@ import {
   lineDistanceM,
   serializeGpx,
 } from '@tourenbuch/shared'
-import { ApiProvider, useApi, useApiConfig } from './lib/api'
+import { ApiProvider, useApi, useApiConfig, useAuthInfo } from './lib/api'
 import { saveTextFile } from './lib/save-file'
 import { TourList } from './components/TourList'
 import { SettingsDialog } from './components/SettingsDialog'
@@ -44,6 +44,7 @@ function Shell() {
   const [showImport, setShowImport] = useState(false)
   const [preview, setPreview] = useState<ImportCandidate | null>(null)
   const { config, updateConfig } = useApiConfig()
+  const { user, signOut } = useAuthInfo()
   const api = useApi()
   const queryClient = useQueryClient()
   const { data: tours } = useTours()
@@ -147,13 +148,23 @@ function Shell() {
             ☁︎ {uploadStatus.uploading ? 'lädt hoch …' : 'ausstehend:'} {uploadStatus.pending}
           </span>
         )}
-        <button
-          className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100"
-          title="Einstellungen"
-          onClick={() => setShowSettings(true)}
-        >
-          ⚙︎
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="hidden text-xs text-gray-400 sm:inline">{user.email}</span>
+          <button
+            className="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100"
+            title="Abmelden"
+            onClick={() => void signOut()}
+          >
+            Abmelden
+          </button>
+          <button
+            className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100"
+            title="Einstellungen"
+            onClick={() => setShowSettings(true)}
+          >
+            ⚙︎
+          </button>
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">

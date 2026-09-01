@@ -1,12 +1,21 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { neon } from '@neondatabase/serverless'
+import { SignJWT, exportJWK, generateKeyPair } from 'jose'
 import type { Card, Tour } from '@tourenbuch/shared'
 import app from '../src/index'
 
 // Läuft gegen den Neon-Branch "test" (PLAN Phase 1.5). Ohne TEST_DATABASE_URL
 // werden die DB-Tests übersprungen (z. B. CI ohne Secret).
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL
-const TOKEN = 'test-token-phase1'
+
+// Neon-Auth-Simulation: eigenes Ed25519-Paar, JWKS als Inline-JSON (TEST_JWKS),
+// JWTs wie von Managed Better Auth (iss/aud = Origin der Auth-URL, sub = User).
+const AUTH_URL = 'https://test-auth.local/neondb/auth'
+const AUTH_ORIGIN = 'https://test-auth.local'
+const USER_A = 'user-a-1111'
+const USER_B = 'user-b-2222'
+let TOKEN = '' // JWT für USER_A (Default in req())
+let TOKEN_B = ''
 
 /** In-Memory-Ersatz für das R2-Binding (nur die genutzten Methoden). */
 class MemR2 {
@@ -36,11 +45,36 @@ class MemR2 {
 const memR2 = new MemR2()
 const env = {
   DATABASE_URL: TEST_DATABASE_URL ?? '',
-  API_TOKEN: TOKEN,
+  NEON_AUTH_URL: AUTH_URL,
+  TEST_JWKS: '',
   R2: memR2 as unknown as R2Bucket,
 }
 
-function req(method: string, path: string, body?: unknown, token: string | null = TOKEN) {
+async function initTestAuth() {
+  const { publicKey, privateKey } = await generateKeyPair('EdDSA', { extractable: true })
+  const jwk = await exportJWK(publicKey)
+  jwk.kid = 'test-key'
+  jwk.alg = 'EdDSA'
+  env.TEST_JWKS = JSON.stringify({ keys: [jwk] })
+  const sign = (sub: string) =>
+    new SignJWT({ sub })
+      .setProtectedHeader({ alg: 'EdDSA', kid: 'test-key' })
+      .setIssuer(AUTH_ORIGIN)
+      .setAudience(AUTH_ORIGIN)
+      .setIssuedAt()
+      .setExpirationTime('15m')
+      .sign(privateKey)
+  TOKEN = await sign(USER_A)
+  TOKEN_B = await sign(USER_B)
+}
+
+function req(
+  method: string,
+  path: string,
+  body?: unknown,
+  token: string | null | undefined = undefined
+) {
+  if (token === undefined) token = TOKEN
   const headers: Record<string, string> = {}
   if (token) headers.Authorization = `Bearer ${token}`
   if (body !== undefined) headers['Content-Type'] = 'application/json'
@@ -53,6 +87,7 @@ function req(method: string, path: string, body?: unknown, token: string | null 
 
 describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
   beforeAll(async () => {
+    await initTestAuth()
     const sql = neon(TEST_DATABASE_URL!)
     await sql`delete from images`
     await sql`delete from cards`
@@ -62,21 +97,35 @@ describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
 
   describe('Auth', () => {
     it('401 ohne Token', async () => {
-      const res = await req('GET', '/api/health', undefined, null)
+      const res = await req('GET', '/api/tours', undefined, null)
       expect(res.status).toBe(401)
       const body = (await res.json()) as { error: { code: string } }
       expect(body.error.code).toBe('unauthorized')
     })
 
-    it('401 mit falschem Token', async () => {
-      const res = await req('GET', '/api/health', undefined, 'falsch')
+    it('401 mit kaputtem JWT', async () => {
+      const res = await req('GET', '/api/tours', undefined, 'kein-echtes-jwt')
       expect(res.status).toBe(401)
     })
 
-    it('200 mit korrektem Token', async () => {
-      const res = await req('GET', '/api/health')
-      expect(res.status).toBe(200)
-      expect(((await res.json()) as { ok: boolean }).ok).toBe(true)
+    it('Health ist öffentlich, Touren mit gültigem JWT erreichbar', async () => {
+      const health = await req('GET', '/api/health', undefined, null)
+      expect(health.status).toBe(200)
+      const tours = await req('GET', '/api/tours')
+      expect(tours.status).toBe(200)
+    })
+
+    it('User-Isolation: User B sieht die Touren von User A nicht', async () => {
+      const created = (await (
+        await req('POST', '/api/tours', { name: 'Privat A' })
+      ).json()) as Tour
+      const listB = (await (await req('GET', '/api/tours', undefined, TOKEN_B)).json()) as Tour[]
+      expect(listB.some((t) => t.id === created.id)).toBe(false)
+      const patchB = await req('PATCH', `/api/tours/${created.id}`, { name: 'geklaut' }, TOKEN_B)
+      expect(patchB.status).toBe(404)
+      const cardsB = await req('GET', `/api/tours/${created.id}/cards`, undefined, TOKEN_B)
+      expect(cardsB.status).toBe(404)
+      await req('DELETE', `/api/tours/${created.id}`)
     })
   })
 
@@ -345,8 +394,14 @@ describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
       expect(rows.some((r) => r.id === imageId)).toBe(true)
     })
 
+    it('PUT für eine sha ohne eigenes Bild → 404 (Besitz-Check)', async () => {
+      const res = await putVariant(ORPHAN_SHA, 'thumb', bytes)
+      expect(res.status).toBe(404)
+    })
+
     it('r2-cleanup listet Waisen im Dry-Run und löscht mit dry=0', async () => {
-      await putVariant(ORPHAN_SHA, 'thumb', bytes)
+      // Waise direkt in R2 ablegen (über die API ist das nicht mehr möglich).
+      await memR2.put(`images/${ORPHAN_SHA}/thumb`, bytes.buffer as ArrayBuffer)
       const dry = (await (
         await req('POST', '/api/admin/r2-cleanup')
       ).json()) as { dryRun: boolean; orphans: string[] }

@@ -14,37 +14,66 @@ import {
 } from '@tourenbuch/shared'
 import { getDb } from './db'
 import { ApiError, uuidParam, validate } from './errors'
+import { verifyNeonAuthToken } from './auth'
 import type { Env } from './env'
 
-const app = new Hono<{ Bindings: Env }>()
+const app = new Hono<{ Bindings: Env; Variables: { userId: string } }>()
 
 // Desktop (Tauri-Webview bzw. Vite-Dev) läuft auf anderer Origin als der Worker;
-// die Daten schützt der Bearer-Token, nicht die Origin. PWA wird same-origin ausgeliefert.
+// die Daten schützt das Neon-Auth-JWT, nicht die Origin. PWA wird same-origin ausgeliefert.
 app.use('/api/*', cors())
 
 // ---------------------------------------------------------------------------
-// Auth: alle /api-Routen hinter statischem Bearer-Token (PRD §7.4)
+// Neon-Auth-Proxy: /neon-auth/* → Managed Better Auth. Der Umweg über den
+// Worker macht die Session-Cookies first-party (kein Safari-/PWA-Problem mit
+// Drittanbieter-Cookies) und lässt Client und API mit EINER Basis-URL
+// auskommen. Für den Vite-Dev-Server (andere Origin) braucht es CORS mit
+// Credentials; die Upstream-CORS-Header werden verworfen.
 // ---------------------------------------------------------------------------
 
-function timingSafeEqual(a: string, b: string): boolean {
-  const enc = new TextEncoder()
-  const ab = enc.encode(a)
-  const bb = enc.encode(b)
-  if (ab.length !== bb.length) return false
-  let diff = 0
-  for (let i = 0; i < ab.length; i++) diff |= (ab[i] ?? 0) ^ (bb[i] ?? 0)
-  return diff === 0
-}
+app.use(
+  '/neon-auth/*',
+  cors({
+    origin: (origin) => origin,
+    credentials: true,
+  })
+)
+
+app.all('/neon-auth/*', async (c) => {
+  const url = new URL(c.req.url)
+  const target =
+    c.env.NEON_AUTH_URL + url.pathname.replace(/^\/neon-auth/, '') + url.search
+  const headers = new Headers(c.req.raw.headers)
+  headers.delete('host')
+  const upstream = await fetch(target, {
+    method: c.req.method,
+    headers,
+    body: c.req.raw.body,
+    redirect: 'manual',
+  })
+  const resHeaders = new Headers(upstream.headers)
+  for (const h of [...resHeaders.keys()]) {
+    if (h.toLowerCase().startsWith('access-control-')) resHeaders.delete(h)
+  }
+  return new Response(upstream.body, { status: upstream.status, headers: resHeaders })
+})
+
+// ---------------------------------------------------------------------------
+// Auth: alle /api-Routen (ausser Health) hinter Neon-Auth-JWT (EdDSA, JWKS)
+// ---------------------------------------------------------------------------
 
 app.use('/api/*', async (c, next) => {
+  if (c.req.path === '/api/health') return next()
   const header = c.req.header('Authorization') ?? ''
   const token = header.startsWith('Bearer ') ? header.slice(7) : ''
-  if (!c.env.API_TOKEN || !token || !timingSafeEqual(token, c.env.API_TOKEN)) {
+  if (!token) {
     return c.json(
-      { error: { code: 'unauthorized', message: 'Fehlender oder ungültiger Bearer-Token' } },
+      { error: { code: 'unauthorized', message: 'Fehlendes Login-Token' } },
       401
     )
   }
+  const userId = await verifyNeonAuthToken(c.env, token)
+  c.set('userId', userId)
   await next()
 })
 
@@ -96,7 +125,7 @@ app.get('/api/tours', async (c) => {
   const rows = await db
     .select()
     .from(tours)
-    .where(isNull(tours.deleted_at))
+    .where(and(isNull(tours.deleted_at), eq(tours.user_id, c.get('userId'))))
     .orderBy(sort === 'name' ? asc(tours.name) : desc(tours.updated_at))
   return c.json(rows.map(stripDeleted))
 })
@@ -104,7 +133,10 @@ app.get('/api/tours', async (c) => {
 app.post('/api/tours', async (c) => {
   const body = validate(tourCreateSchema, await readJson(c))
   const db = getDb(c.env)
-  const [row] = await db.insert(tours).values(body).returning()
+  const [row] = await db
+    .insert(tours)
+    .values({ ...body, user_id: c.get('userId') })
+    .returning()
   if (!row) throw new ApiError(500, 'internal', 'Insert lieferte keine Zeile')
   return c.json(stripDeleted(row), 201)
 })
@@ -116,7 +148,9 @@ app.patch('/api/tours/:id', async (c) => {
   const [row] = await db
     .update(tours)
     .set({ ...body, updated_at: sql`now()` })
-    .where(and(eq(tours.id, id), isNull(tours.deleted_at)))
+    .where(
+      and(eq(tours.id, id), isNull(tours.deleted_at), eq(tours.user_id, c.get('userId')))
+    )
     .returning()
   if (!row) throw new ApiError(404, 'not_found', 'Tour nicht gefunden')
   return c.json(stripDeleted(row))
@@ -129,7 +163,9 @@ app.delete('/api/tours/:id', async (c) => {
   const [row] = await db
     .update(tours)
     .set({ deleted_at: sql`now()` })
-    .where(and(eq(tours.id, id), isNull(tours.deleted_at)))
+    .where(
+      and(eq(tours.id, id), isNull(tours.deleted_at), eq(tours.user_id, c.get('userId')))
+    )
     .returning({ id: tours.id })
   if (!row) throw new ApiError(404, 'not_found', 'Tour nicht gefunden')
   await db
@@ -143,18 +179,45 @@ app.delete('/api/tours/:id', async (c) => {
 // Cards
 // ---------------------------------------------------------------------------
 
-async function requireTour(db: ReturnType<typeof getDb>, tourId: string) {
+async function requireTour(db: ReturnType<typeof getDb>, tourId: string, userId: string) {
   const [row] = await db
     .select({ id: tours.id })
     .from(tours)
-    .where(and(eq(tours.id, tourId), isNull(tours.deleted_at)))
+    .where(and(eq(tours.id, tourId), isNull(tours.deleted_at), eq(tours.user_id, userId)))
   if (!row) throw new ApiError(404, 'not_found', 'Tour nicht gefunden')
+}
+
+/** Card muss existieren und über ihre Tour dem User gehören. */
+async function requireCard(db: ReturnType<typeof getDb>, cardId: string, userId: string) {
+  const [row] = await db
+    .select({ id: cards.id })
+    .from(cards)
+    .innerJoin(tours, eq(cards.tour_id, tours.id))
+    .where(
+      and(eq(cards.id, cardId), isNull(cards.deleted_at), eq(tours.user_id, userId))
+    )
+  if (!row) throw new ApiError(404, 'not_found', 'Card nicht gefunden')
+}
+
+/** true, wenn der User ein Bild mit dieser sha256 besitzt (Kette images→cards→tours). */
+async function userOwnsSha(
+  db: ReturnType<typeof getDb>,
+  sha: string,
+  userId: string
+): Promise<boolean> {
+  const rows = await db
+    .select({ id: images.id })
+    .from(images)
+    .innerJoin(cards, eq(images.card_id, cards.id))
+    .innerJoin(tours, eq(cards.tour_id, tours.id))
+    .where(and(eq(images.sha256, sha), eq(tours.user_id, userId)))
+  return rows.length > 0
 }
 
 app.get('/api/tours/:id/cards', async (c) => {
   const tourId = idParam(c.req.param('id'))
   const db = getDb(c.env)
-  await requireTour(db, tourId)
+  await requireTour(db, tourId, c.get('userId'))
   const rows = await db
     .select()
     .from(cards)
@@ -166,7 +229,7 @@ app.get('/api/tours/:id/cards', async (c) => {
 app.post('/api/cards', async (c) => {
   const body = validate(cardCreateSchema, await readJson(c))
   const db = getDb(c.env)
-  await requireTour(db, body.tour_id)
+  await requireTour(db, body.tour_id, c.get('userId'))
   let position = body.position
   if (position === undefined) {
     const [agg] = await db
@@ -187,6 +250,7 @@ app.patch('/api/cards/:id', async (c) => {
   const id = idParam(c.req.param('id'))
   const body = validate(cardUpdateSchema, await readJson(c))
   const db = getDb(c.env)
+  await requireCard(db, id, c.get('userId'))
   const [row] = await db
     .update(cards)
     .set({ ...body, updated_at: sql`now()` })
@@ -199,6 +263,7 @@ app.patch('/api/cards/:id', async (c) => {
 app.delete('/api/cards/:id', async (c) => {
   const id = idParam(c.req.param('id'))
   const db = getDb(c.env)
+  await requireCard(db, id, c.get('userId'))
   const [row] = await db
     .update(cards)
     .set({ deleted_at: sql`now()` })
@@ -211,7 +276,7 @@ app.delete('/api/cards/:id', async (c) => {
 app.post('/api/cards/reorder', async (c) => {
   const body = validate(cardsReorderSchema, await readJson(c))
   const db = getDb(c.env)
-  await requireTour(db, body.tour_id)
+  await requireTour(db, body.tour_id, c.get('userId'))
   // Eine Anweisung für alle Positionen (atomar, Reihenfolge = Index in ids).
   const pairs = body.ids.map((id, i) => sql`(${id}::uuid, ${i}::int)`)
   await db.execute(sql`
@@ -237,7 +302,7 @@ app.post('/api/cards/reorder', async (c) => {
 app.get('/api/tours/:id/images', async (c) => {
   const tourId = idParam(c.req.param('id'))
   const db = getDb(c.env)
-  await requireTour(db, tourId)
+  await requireTour(db, tourId, c.get('userId'))
   const rows = await db
     .select({ image: images })
     .from(images)
@@ -250,11 +315,7 @@ app.get('/api/tours/:id/images', async (c) => {
 app.post('/api/images', async (c) => {
   const body = validate(imageCreateSchema, await readJson(c))
   const db = getDb(c.env)
-  const [card] = await db
-    .select({ id: cards.id })
-    .from(cards)
-    .where(and(eq(cards.id, body.card_id), isNull(cards.deleted_at)))
-  if (!card) throw new ApiError(404, 'not_found', 'Card nicht gefunden')
+  await requireCard(db, body.card_id, c.get('userId'))
   // Duplikat-Import (gleiche sha256) legt keine zweite Zeile an, sondern
   // liefert die bestehende zurück – der Client verknüpft nur (PRD F4).
   const [existing] = await db.select().from(images).where(eq(images.sha256, body.sha256))
@@ -268,6 +329,13 @@ app.patch('/api/images/:id', async (c) => {
   const id = idParam(c.req.param('id'))
   const body = validate(imageUpdateSchema, await readJson(c))
   const db = getDb(c.env)
+  const [owned] = await db
+    .select({ id: images.id })
+    .from(images)
+    .innerJoin(cards, eq(images.card_id, cards.id))
+    .innerJoin(tours, eq(cards.tour_id, tours.id))
+    .where(and(eq(images.id, id), eq(tours.user_id, c.get('userId'))))
+  if (!owned) throw new ApiError(404, 'not_found', 'Bild nicht gefunden')
   const [row] = await db.update(images).set(body).where(eq(images.id, id)).returning()
   if (!row) throw new ApiError(404, 'not_found', 'Bild nicht gefunden')
   return c.json(row)
@@ -276,6 +344,13 @@ app.patch('/api/images/:id', async (c) => {
 app.delete('/api/images/:id', async (c) => {
   const id = idParam(c.req.param('id'))
   const db = getDb(c.env)
+  const [owned] = await db
+    .select({ id: images.id })
+    .from(images)
+    .innerJoin(cards, eq(images.card_id, cards.id))
+    .innerJoin(tours, eq(cards.tour_id, tours.id))
+    .where(and(eq(images.id, id), eq(tours.user_id, c.get('userId'))))
+  if (!owned) throw new ApiError(404, 'not_found', 'Bild nicht gefunden')
   const [row] = await db
     .delete(images)
     .where(eq(images.id, id))
@@ -328,10 +403,13 @@ app.get('/api/images', async (c) => {
     .select({ image: images })
     .from(images)
     .innerJoin(cards, eq(images.card_id, cards.id))
+    .innerJoin(tours, eq(cards.tour_id, tours.id))
     .where(
-      state
-        ? and(isNull(cards.deleted_at), eq(images.upload_state, state))
-        : isNull(cards.deleted_at)
+      and(
+        isNull(cards.deleted_at),
+        eq(tours.user_id, c.get('userId')),
+        ...(state ? [eq(images.upload_state, state)] : [])
+      )
     )
   return c.json(rows.map((r) => r.image))
 })
@@ -342,6 +420,9 @@ app.put('/api/images/:sha256/:variant', async (c) => {
   const contentType = c.req.header('content-type') ?? ''
   if (!contentType.startsWith('image/')) {
     throw new ApiError(400, 'validation_error', 'Content-Type muss image/* sein')
+  }
+  if (!(await userOwnsSha(getDb(c.env), sha, c.get('userId')))) {
+    throw new ApiError(404, 'not_found', 'Kein Bild mit dieser sha256 im Konto')
   }
   const body = await c.req.arrayBuffer()
   if (body.byteLength === 0) {
@@ -358,6 +439,9 @@ app.put('/api/images/:sha256/:variant', async (c) => {
 app.get('/api/images/:sha256/:variant', async (c) => {
   const sha = shaParam(c.req.param('sha256'))
   const variant = variantParam(c.req.param('variant'))
+  if (!(await userOwnsSha(getDb(c.env), sha, c.get('userId')))) {
+    throw new ApiError(404, 'not_found', 'Kein Bild mit dieser sha256 im Konto')
+  }
   const obj = await c.env.R2.get(r2Key(sha, variant))
   if (!obj) throw new ApiError(404, 'not_found', 'Ableitung nicht in R2')
   return new Response(obj.body, {
@@ -400,7 +484,10 @@ app.post('/api/admin/r2-cleanup', async (c) => {
 
 app.get('/api/settings', async (c) => {
   const db = getDb(c.env)
-  const rows = await db.select().from(settings)
+  const rows = await db
+    .select()
+    .from(settings)
+    .where(eq(settings.user_id, c.get('userId')))
   const result: Record<string, unknown> = {}
   for (const row of rows) result[row.key] = row.value
   return c.json(result)
@@ -415,8 +502,11 @@ app.put('/api/settings/:key', async (c) => {
   const db = getDb(c.env)
   await db
     .insert(settings)
-    .values({ key, value: body.value })
-    .onConflictDoUpdate({ target: settings.key, set: { value: body.value } })
+    .values({ user_id: c.get('userId'), key, value: body.value })
+    .onConflictDoUpdate({
+      target: [settings.user_id, settings.key],
+      set: { value: body.value },
+    })
   return c.json({ key, value: body.value })
 })
 

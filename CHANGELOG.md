@@ -1,5 +1,15 @@
 # Changelog
 
+## Neon Auth – User-System (2026-09-01)
+
+- **Konten statt statischem Token:** Anmeldung/Registrierung über Neon Auth (Managed Better Auth, Provider im Projekt «Bigstep»); die API verifiziert pro Request ein 15-Minuten-JWT (EdDSA) gegen das JWKS (`jose`), `sub` = User-ID. Der alte `API_TOKEN` ist entfernt (Secret gelöscht, Middleware ersetzt); `/api/health` ist jetzt öffentlich.
+- **Auth-Proxy `/neon-auth/*` im Worker:** Session-Cookies laufen first-party über die App-Origin (kein Safari-/PWA-Drittanbieter-Cookie-Problem), eine einzige Basis-URL für App, API und Auth; Upstream-CORS-Header werden ersetzt (Origin-Echo + Credentials für den Vite-Dev). `run_worker_first` um `/neon-auth/*` ergänzt (Asset-Layer beantwortete POSTs sonst mit 405). Trusted Domain `https://tourenbuch-api.topos-ch.workers.dev` via Neon-API registriert.
+- **Datenmodell:** `tours.user_id` (not null, Index) und `settings` mit PK `(user_id, key)`; Migration `drizzle/0001_neon_auth_users.sql` auf production- und test-Branch ausgeführt, Bestandsdaten dem ersten Konto (fleix@gmx.ch) zugeordnet. Alle Routen streng user-scoped: Tours direkt, Cards/Images über die Besitzkette (`images→cards→tours`), R2-GET/PUT nur für eigene sha256, Settings pro User.
+- **Frontend:** Login-/Registrier-Screen (eigene UI über `@neondatabase/neon-js`; `credentials: 'include'` via Adapter-Option — die Beta-SDK nimmt `fetchOptions` nur dort), Session-Gate vor der App, Abmelden im Header; ApiClient holt sich das JWT per Token-Provider (Cache bis kurz vor Ablauf, Endpoint `/neon-auth/token` direkt). Settings-Dialog nur noch für die API-URL.
+- **Erste per-User-Einstellung:** Routenfarbe (Farbwähler im Karten-Panel, live via `setPaintProperty`, gespeichert als `settings.appearance`) — Grundlage für weitere App-Einstellungen (z. B. Book-Optionen).
+- Tests: JWTs werden mit einem eigenen Ed25519-Paar signiert (`TEST_JWKS` inline), neue Fälle für User-Isolation und Besitz-Checks (34 API-Tests, 67 gesamt). E2E auf Produktion verifiziert: Registrierung/Login, Session über Reload, leere Tourenliste für fremde Konten, per-User-Routenfarbe; Test-Konten wieder gelöscht.
+- **Dev-Hinweis:** Chrome verwirft die `__Secure-`-Session-Cookies über http — lokal darum `wrangler dev --local-protocol https` verwenden oder im Dev-Client die Produktions-URL als API-URL eintragen.
+
 ## Fix: MapLibre-Worker im Prod-Build (2026-09-01)
 
 - In der deployten App fehlten Route und Overlays: Der `?url`-Import des MapLibre-Workers kopiert im Build nur das 18-KB-Entry-File, dessen relativer Import von `maplibre-gl-shared.mjs` ins Leere lief — der SPA-Fallback lieferte dafür index.html (»MIME type text/html«-Konsolenfehler), der Karten-Worker starb, `style.load` feuerte nie. Fix: `?worker&url` lässt Vite den Worker als eigenständiges Bundle (479 KB) mit korrektem MIME emittieren. Dev- und Prod-Pfad verifiziert, neu deployt.
