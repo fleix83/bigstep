@@ -7,6 +7,8 @@ coverage/
 .env
 .env.*
 !.env.example
+# bewusst leer (überschreibt Dev-Werte im Prod-Build), enthält keine Secrets
+!.env.production
 .dev.vars
 .dev.vars.*
 

@@ -14,6 +14,7 @@ import { MapView } from './components/MapView'
 import { ImportDialog, type ImportCandidate } from './components/ImportDialog'
 import { BookView } from './components/BookView'
 import { useTours } from './hooks/useTours'
+import { useReadOnly } from './lib/use-read-only'
 import { useRouteEditor } from './hooks/useRouteEditor'
 import { useTourImages } from './hooks/useCards'
 import { findDerivatives } from './lib/image-store'
@@ -46,8 +47,9 @@ function Shell() {
   const queryClient = useQueryClient()
   const { data: tours } = useTours()
   const selectedTour = tours?.find((t) => t.id === selectedId) ?? null
+  const readOnly = useReadOnly()
   const [editing, setEditing] = useState(false)
-  const editor = useRouteEditor(selectedTour, editing && tab === 'karte')
+  const editor = useRouteEditor(selectedTour, editing && !readOnly && tab === 'karte')
   const [highlightCardId, setHighlightCardId] = useState<string | null>(null)
 
   // Foto-Pins: Bilder mit GPS der aktiven Tour, Thumb-URLs lokal auflösen.
@@ -132,10 +134,23 @@ function Shell() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <TourList selectedId={selectedId} onSelect={selectTour} />
+        {/* Mobil: Liste als Startscreen, Detail erst nach Tour-Wahl (PRD F6). */}
+        <div className={`${selectedId ? 'hidden md:flex' : 'flex'} min-h-0 w-full md:w-auto`}>
+          <TourList selectedId={selectedId} onSelect={selectTour} readOnly={readOnly} />
+        </div>
 
-        <main className="flex min-w-0 flex-1 flex-col">
+        <main
+          className={`${selectedId ? 'flex' : 'hidden md:flex'} min-w-0 flex-1 flex-col`}
+        >
           <nav className="flex items-center border-b border-gray-200 bg-white">
+            {selectedId && (
+              <button
+                className="px-3 py-2 text-sm text-blue-700 md:hidden"
+                onClick={() => selectTour(null)}
+              >
+                ‹ Touren
+              </button>
+            )}
             {(['karte', 'book'] as const).map((t) => (
               <button
                 key={t}
@@ -150,6 +165,7 @@ function Shell() {
               </button>
             ))}
 
+            {!readOnly && (
             <div className="ml-4 flex items-center gap-1 border-l border-gray-200 pl-4">
               <button
                 className="rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
@@ -171,9 +187,10 @@ function Shell() {
                 ⤓ GPX-Export
               </button>
             </div>
+            )}
 
             {selectedTour && (
-              <span className="ml-auto self-center px-4 text-sm text-gray-400">
+              <span className="ml-auto self-center truncate px-4 text-sm text-gray-400">
                 {selectedTour.name}
               </span>
             )}
@@ -195,7 +212,7 @@ function Shell() {
             />
 
             {/* Editor-Toolbar */}
-            {tab === 'karte' && selectedTour && (
+            {!readOnly && tab === 'karte' && selectedTour && (
               <div className="absolute left-14 top-2 z-10 flex items-center gap-1 rounded-lg border border-gray-200 bg-white/95 px-2 py-1.5 shadow-md">
                 {!editing ? (
                   <button
@@ -276,6 +293,7 @@ function Shell() {
                     tourId={selectedTour.id}
                     highlightCardId={highlightCardId}
                     onHighlightDone={() => setHighlightCardId(null)}
+                    readOnly={readOnly}
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center text-sm text-gray-500">

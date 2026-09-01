@@ -13,6 +13,14 @@ const queryClient = new QueryClient({
   },
 })
 
+// Service Worker nur im Prod-Build (PWA) und ausserhalb von Tauri —
+// im Dev würde er Vites Module-Serving stören.
+if (import.meta.env.PROD && 'serviceWorker' in navigator && !('__TAURI_INTERNALS__' in window)) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js')
+  })
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

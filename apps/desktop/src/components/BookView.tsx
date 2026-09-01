@@ -11,13 +11,15 @@ interface Props {
   /** Card, zu der gescrollt werden soll (Klick auf Foto-Pin). */
   highlightCardId: string | null
   onHighlightDone: () => void
+  /** PWA/Mobile: Editier-Controls werden nicht gerendert (PRD F6). */
+  readOnly?: boolean
 }
 
 function renderMarkdown(md: string): string {
   return DOMPurify.sanitize(marked.parse(md, { async: false, gfm: true }))
 }
 
-export function BookView({ tourId, highlightCardId, onHighlightDone }: Props) {
+export function BookView({ tourId, highlightCardId, onHighlightDone, readOnly = false }: Props) {
   const { data: cards, isLoading } = useCards(tourId)
   const { data: images } = useTourImages(tourId)
   const mutations = useCardMutations(tourId)
@@ -66,19 +68,21 @@ export function BookView({ tourId, highlightCardId, onHighlightDone }: Props) {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
           Book
         </h2>
-        <button
-          className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          disabled={mutations.createCard.isPending}
-          onClick={() => mutations.createCard.mutate()}
-        >
-          + Neue Card
-        </button>
+        {!readOnly && (
+          <button
+            className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            disabled={mutations.createCard.isPending}
+            onClick={() => mutations.createCard.mutate()}
+          >
+            + Neue Card
+          </button>
+        )}
       </div>
 
       {isLoading && <p className="text-sm text-gray-500">Lade Cards …</p>}
       {cards && cards.length === 0 && (
         <p className="text-sm text-gray-500">
-          Noch keine Cards – mit «+ Neue Card» beginnen.
+          {readOnly ? 'Noch keine Cards.' : 'Noch keine Cards – mit «+ Neue Card» beginnen.'}
         </p>
       )}
 
@@ -87,6 +91,7 @@ export function BookView({ tourId, highlightCardId, onHighlightDone }: Props) {
           <CardItem
             key={card.id}
             card={card}
+            readOnly={readOnly}
             images={imagesByCard.get(card.id) ?? []}
             mutations={mutations}
             onDelete={() => setDeleteCandidate(card)}
@@ -140,6 +145,7 @@ export function BookView({ tourId, highlightCardId, onHighlightDone }: Props) {
 
 interface CardItemProps {
   card: Card
+  readOnly: boolean
   images: Image[]
   mutations: ReturnType<typeof useCardMutations>
   onDelete: () => void
@@ -153,6 +159,7 @@ interface CardItemProps {
 
 function CardItem({
   card,
+  readOnly,
   images,
   mutations,
   onDelete,
@@ -187,32 +194,45 @@ function CardItem({
       className={`group flex flex-col rounded-lg border bg-white shadow-sm transition ${
         dragging ? 'opacity-40' : ''
       } ${dragOver ? 'border-blue-400 bg-blue-50/50' : 'border-gray-200'}`}
-      onDragOver={(e) => {
-        e.preventDefault()
-        setDragOver(true)
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={(e) => {
-        e.preventDefault()
-        setDragOver(false)
-        if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files)
-        else onDropOn()
-      }}
+      onDragOver={
+        readOnly
+          ? undefined
+          : (e) => {
+              e.preventDefault()
+              setDragOver(true)
+            }
+      }
+      onDragLeave={readOnly ? undefined : () => setDragOver(false)}
+      onDrop={
+        readOnly
+          ? undefined
+          : (e) => {
+              e.preventDefault()
+              setDragOver(false)
+              if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files)
+              else onDropOn()
+            }
+      }
     >
       <div
-        className="flex cursor-grab items-center gap-2 border-b border-gray-100 px-3 py-2"
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.effectAllowed = 'move'
-          onDragStart()
-        }}
-        onDragEnd={onDragEnd}
-        title="Ziehen zum Umsortieren"
+        className={`flex items-center gap-2 border-b border-gray-100 px-3 py-2 ${readOnly ? '' : 'cursor-grab'}`}
+        draggable={!readOnly}
+        onDragStart={
+          readOnly
+            ? undefined
+            : (e) => {
+                e.dataTransfer.effectAllowed = 'move'
+                onDragStart()
+              }
+        }
+        onDragEnd={readOnly ? undefined : onDragEnd}
+        title={readOnly ? undefined : 'Ziehen zum Umsortieren'}
       >
-        <span className="text-gray-300">⠿</span>
+        {!readOnly && <span className="text-gray-300">⠿</span>}
         <input
           className="w-full bg-transparent text-sm font-medium text-gray-900 outline-none placeholder:text-gray-400"
-          placeholder="Titel …"
+          readOnly={readOnly}
+          placeholder={readOnly ? 'Ohne Titel' : 'Titel …'}
           defaultValue={card.title ?? ''}
           onBlur={(e) => {
             const v = e.target.value.trim()
@@ -221,25 +241,33 @@ function CardItem({
             }
           }}
         />
-        <input
-          type="date"
-          className="shrink-0 bg-transparent text-xs text-gray-500 outline-none"
-          defaultValue={card.taken_at ? card.taken_at.slice(0, 10) : ''}
-          onChange={(e) => {
-            const v = e.target.value
-            mutations.updateCard.mutate({
-              id: card.id,
-              data: { taken_at: v ? `${v}T12:00:00+00:00` : null },
-            })
-          }}
-        />
-        <button
-          className="hidden shrink-0 rounded px-1 text-gray-400 hover:bg-red-100 hover:text-red-600 group-hover:block"
-          title="Card löschen"
-          onClick={onDelete}
-        >
-          🗑
-        </button>
+        {readOnly ? (
+          card.taken_at && (
+            <span className="shrink-0 text-xs text-gray-500">{card.taken_at.slice(0, 10)}</span>
+          )
+        ) : (
+          <input
+            type="date"
+            className="shrink-0 bg-transparent text-xs text-gray-500 outline-none"
+            defaultValue={card.taken_at ? card.taken_at.slice(0, 10) : ''}
+            onChange={(e) => {
+              const v = e.target.value
+              mutations.updateCard.mutate({
+                id: card.id,
+                data: { taken_at: v ? `${v}T12:00:00+00:00` : null },
+              })
+            }}
+          />
+        )}
+        {!readOnly && (
+          <button
+            className="hidden shrink-0 rounded px-1 text-gray-400 hover:bg-red-100 hover:text-red-600 group-hover:block"
+            title="Card löschen"
+            onClick={onDelete}
+          >
+            🗑
+          </button>
+        )}
       </div>
 
       {images.length > 0 && (
@@ -248,6 +276,7 @@ function CardItem({
             <ImageThumb
               key={img.id}
               image={img}
+              readOnly={readOnly}
               onOpen={onOpenImage}
               onDelete={() => onDeleteImage(img)}
             />
@@ -267,21 +296,28 @@ function CardItem({
           />
         ) : (
           <div
-            className="prose prose-sm max-w-none cursor-text text-sm text-gray-800 [&_a]:text-blue-600 [&_h1]:text-base [&_h2]:text-sm"
-            title="Klicken zum Bearbeiten"
-            onClick={() => {
-              setBodyDraft(card.body_md ?? '')
-              setEditingBody(true)
-            }}
+            className={`prose prose-sm max-w-none text-sm text-gray-800 [&_a]:text-blue-600 [&_h1]:text-base [&_h2]:text-sm ${readOnly ? '' : 'cursor-text'}`}
+            title={readOnly ? undefined : 'Klicken zum Bearbeiten'}
+            onClick={
+              readOnly
+                ? undefined
+                : () => {
+                    setBodyDraft(card.body_md ?? '')
+                    setEditingBody(true)
+                  }
+            }
             dangerouslySetInnerHTML={{
               __html: card.body_md
                 ? renderMarkdown(card.body_md)
-                : '<span class="text-gray-400">Notizen hinzufügen …</span>',
+                : readOnly
+                  ? ''
+                  : '<span class="text-gray-400">Notizen hinzufügen …</span>',
             }}
           />
         )}
       </div>
 
+      {!readOnly && (
       <div className="flex items-center justify-between border-t border-gray-100 px-3 py-1.5">
         <button
           className="rounded px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-100"
@@ -305,16 +341,19 @@ function CardItem({
           }}
         />
       </div>
+      )}
     </div>
   )
 }
 
 function ImageThumb({
   image,
+  readOnly,
   onOpen,
   onDelete,
 }: {
   image: Image
+  readOnly: boolean
   onOpen: (displayUrl: string) => void
   onDelete: () => void
 }) {
@@ -349,13 +388,15 @@ function ImageThumb({
         className="h-16 w-16 cursor-zoom-in rounded object-cover"
         onClick={() => onOpen(urls.display)}
       />
-      <button
-        className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-gray-900/80 text-[10px] text-white group-hover/thumb:flex"
-        title="Bild entfernen"
-        onClick={onDelete}
-      >
-        ✕
-      </button>
+      {!readOnly && (
+        <button
+          className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-gray-900/80 text-[10px] text-white group-hover/thumb:flex"
+          title="Bild entfernen"
+          onClick={onDelete}
+        >
+          ✕
+        </button>
+      )}
     </div>
   )
 }

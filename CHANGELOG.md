@@ -1,5 +1,15 @@
 # Changelog
 
+## Phase 7 – Mobile-PWA read-only (2026-09-01)
+
+- Gleiche React-Codebasis für Desktop und PWA (kein separates `packages/ui` nötig — die App baut ohnehin ohne Tauri; Entscheid statt PLAN 7.1-Auslagerung).
+- `useReadOnly` (Smartphone-Viewport < 768 px ausserhalb der Tauri-App): sämtliche Editier-Controls werden **nicht gerendert** — Tour anlegen/umbenennen/löschen, Status-Toggle, GPX-Import/-Export, Routen-Editor, Card-Erstellen/-Editieren/-Löschen, Bild-Upload und -Löschen. Karte, Overlays, Kennzahlen, Cards und Lightbox bleiben.
+- Responsive: unter 768 px ist die Tourenliste der Startscreen; eine Tour öffnet Karte/Book mit «‹ Touren»-Zurück-Navigation.
+- Token-Einrichtung: Settings-Dialog mit same-origin-Vorbelegung (die PWA kommt vom selben Worker wie die API); Ablage in localStorage. `apps/desktop/.env.production` (leer, committet) verhindert, dass Dev-URL/-Token in den Build eingebacken werden.
+- PWA: Manifest (Icons 192/512 + maskable, standalone), Service Worker cached nur die App-Shell (Navigationen network-first, gehashte Assets cache-first) — nie `/api/*`, nie Cross-Origin (Kacheln/BRouter/GeoAdmin); Registrierung nur im Prod-Build ausserhalb Tauris.
+- Auslieferung über den Worker: `[assets]` in wrangler.toml (SPA-Fallback, `run_worker_first = ["/api/*"]`) — gleiche Origin wie die API, kein CORS-Thema. Vorher `pnpm --filter @tourenbuch/desktop build`.
+- Verifiziert (Chrome-Device-Emulation 390×844 gegen den Worker): Vollbild-Liste ohne Editier-UI, Detail mit Zurück-Navigation, Book read-only, SW aktiv und kontrollierend, Manifest ok; Lighthouse (mobile): Accessibility 97, Best Practices 96 — die frühere Lighthouse-PWA-Kategorie existiert seit LH 12 nicht mehr, die Installierbarkeits-Kriterien sind einzeln geprüft. Bilder in der PWA zeigen «nicht lokal», bis der R2-Sync (Phase 8) sie geräteübergreifend verfügbar macht (OPFS/App-Data sind origin- bzw. gerätegebunden).
+
 ## Phase 6 – Book-Reiter (2026-08-31)
 
 - API: Images-Endpunkte (`GET /api/tours/:id/images`, `POST/PATCH/DELETE /api/images`) — nur Metadaten, kein Bytea; Duplikat-Import (gleiche sha256) liefert die bestehende Zeile (200) statt einer zweiten. 6 neue API-Tests (jetzt 27).

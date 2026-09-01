@@ -2,6 +2,15 @@ name = "tourenbuch-api"
 main = "src/index.ts"
 compatibility_date = "2026-08-01"
 
+# Phase 7: Der Worker liefert auch die PWA aus (gleiche Origin wie die API,
+# kein CORS-Thema). Vorher `pnpm --filter @tourenbuch/desktop build` laufen
+# lassen. /api/* geht immer zuerst an den Worker, alles andere an die Assets;
+# unbekannte Pfade fallen auf index.html zurück (SPA).
+[assets]
+directory = "../desktop/dist"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
 # Secrets (nie hier eintragen!):
 #   lokal:      apps/api/.dev.vars  (DATABASE_URL, API_TOKEN)
 #   Produktion: wrangler secret put DATABASE_URL / API_TOKEN

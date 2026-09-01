@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { AppConfig } from '../lib/config'
+import { defaultApiUrl, type AppConfig } from '../lib/config'
 
 interface Props {
   initial: AppConfig | null
@@ -9,7 +9,8 @@ interface Props {
 
 /** Erfassung von API-URL und Bearer-Token (PLAN Phase 2.3). */
 export function SettingsDialog({ initial, onSave, onClose }: Props) {
-  const [apiUrl, setApiUrl] = useState(initial?.apiUrl ?? 'http://localhost:8787')
+  // PWA: eigene Origin ist der richtige Default (same-origin Auslieferung).
+  const [apiUrl, setApiUrl] = useState(initial?.apiUrl ?? (defaultApiUrl() || 'http://localhost:8787'))
   const [token, setToken] = useState(initial?.token ?? '')
 
   const valid = apiUrl.trim().length > 0 && token.trim().length > 0

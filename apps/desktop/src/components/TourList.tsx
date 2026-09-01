@@ -10,9 +10,11 @@ type SortMode = 'updated' | 'name'
 interface Props {
   selectedId: string | null
   onSelect: (id: string | null) => void
+  /** PWA/Mobile: Editier-Controls werden nicht gerendert (PRD F6). */
+  readOnly?: boolean
 }
 
-export function TourList({ selectedId, onSelect }: Props) {
+export function TourList({ selectedId, onSelect, readOnly = false }: Props) {
   const { data: tours, isLoading, error: loadError } = useTours()
   const [sortMode, setSortMode] = useState<SortMode>('updated')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -52,14 +54,18 @@ export function TourList({ selectedId, onSelect }: Props) {
   }
 
   return (
-    <aside className="flex h-full w-72 shrink-0 flex-col border-r border-gray-200 bg-gray-50">
+    <aside className="flex h-full w-full shrink-0 flex-col border-r border-gray-200 bg-gray-50 md:w-72">
       <div className="flex items-center justify-between gap-2 border-b border-gray-200 p-3">
-        <button
-          className="flex-1 rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          onClick={handleCreate}
-        >
-          + Neue Tour
-        </button>
+        {readOnly ? (
+          <span className="flex-1 px-1 text-sm font-semibold text-gray-700">Touren</span>
+        ) : (
+          <button
+            className="flex-1 rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            onClick={handleCreate}
+          >
+            + Neue Tour
+          </button>
+        )}
         <button
           className="rounded border border-gray-300 px-2 py-2 text-xs text-gray-600 hover:bg-gray-100"
           title={sortMode === 'updated' ? 'Alphabetisch sortieren' : 'Nach Änderung sortieren'}
@@ -93,6 +99,7 @@ export function TourList({ selectedId, onSelect }: Props) {
             <TourListItem
               key={tour.id}
               tour={tour}
+              readOnly={readOnly}
               selected={tour.id === selectedId}
               editing={tour.id === editingId}
               onSelect={() => onSelect(tour.id)}
@@ -124,6 +131,7 @@ export function TourList({ selectedId, onSelect }: Props) {
 
 interface ItemProps {
   tour: Tour
+  readOnly: boolean
   selected: boolean
   editing: boolean
   onSelect: () => void
@@ -135,6 +143,7 @@ interface ItemProps {
 
 function TourListItem({
   tour,
+  readOnly,
   selected,
   editing,
   onSelect,
@@ -160,7 +169,7 @@ function TourListItem({
       onClick={onSelect}
     >
       <div className="flex items-center justify-between gap-2">
-        {editing ? (
+        {editing && !readOnly ? (
           <input
             ref={inputRef}
             defaultValue={tour.name}
@@ -175,39 +184,51 @@ function TourListItem({
         ) : (
           <span
             className="truncate text-sm font-medium text-gray-900"
-            title="Doppelklick zum Umbenennen"
-            onDoubleClick={(e) => {
-              e.stopPropagation()
-              onStartEdit()
-            }}
+            title={readOnly ? undefined : 'Doppelklick zum Umbenennen'}
+            onDoubleClick={
+              readOnly
+                ? undefined
+                : (e) => {
+                    e.stopPropagation()
+                    onStartEdit()
+                  }
+            }
           >
             {tour.name}
           </span>
         )}
-        <button
-          className="hidden shrink-0 rounded px-1 text-gray-400 hover:bg-red-100 hover:text-red-600 group-hover:block"
-          title="Tour löschen"
-          onClick={(e) => {
-            e.stopPropagation()
-            onDelete()
-          }}
-        >
-          🗑
-        </button>
+        {!readOnly && (
+          <button
+            className="hidden shrink-0 rounded px-1 text-gray-400 hover:bg-red-100 hover:text-red-600 group-hover:block"
+            title="Tour löschen"
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete()
+            }}
+          >
+            🗑
+          </button>
+        )}
       </div>
       <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
         <span>{formatDistance(tour.distance_m)}</span>
         <span>↑ {formatMeters(tour.ascent_m)}</span>
-        <button
-          className="ml-auto"
-          title="Status umschalten"
-          onClick={(e) => {
-            e.stopPropagation()
-            onToggleStatus()
-          }}
-        >
-          <StatusBadge status={tour.status} />
-        </button>
+        {readOnly ? (
+          <span className="ml-auto">
+            <StatusBadge status={tour.status} />
+          </span>
+        ) : (
+          <button
+            className="ml-auto"
+            title="Status umschalten"
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggleStatus()
+            }}
+          >
+            <StatusBadge status={tour.status} />
+          </button>
+        )}
       </div>
     </li>
   )
