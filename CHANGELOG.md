@@ -1,5 +1,9 @@
 # Changelog
 
+## Fix: MapLibre-Worker im Prod-Build (2026-09-01)
+
+- In der deployten App fehlten Route und Overlays: Der `?url`-Import des MapLibre-Workers kopiert im Build nur das 18-KB-Entry-File, dessen relativer Import von `maplibre-gl-shared.mjs` ins Leere lief — der SPA-Fallback lieferte dafür index.html (»MIME type text/html«-Konsolenfehler), der Karten-Worker starb, `style.load` feuerte nie. Fix: `?worker&url` lässt Vite den Worker als eigenständiges Bundle (479 KB) mit korrektem MIME emittieren. Dev- und Prod-Pfad verifiziert, neu deployt.
+
 ## Phase 8 – Cloudflare R2 (2026-09-01)
 
 - R2-Binding «topos» im Worker; Keys content-addressed (`images/<sha256>/<display|thumb>`) — PUTs idempotent, ein abgebrochener Upload hinterlässt keinen inkonsistenten Zustand.

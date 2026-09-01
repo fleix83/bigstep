@@ -9,7 +9,11 @@ import {
   type GeoJSONSource,
   type StyleSpecification,
 } from 'maplibre-gl'
-import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
+// `?worker&url` (statt `?url`): Vite bundelt den Worker im Prod-Build als
+// eigenständiges Chunk MITSAMT seiner Abhängigkeit maplibre-gl-shared.mjs —
+// mit blossem `?url` zeigte dessen relativer Import im Build ins Leere, der
+// SPA-Fallback lieferte index.html (text/html) und der Karten-Worker starb.
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Feature, FeatureCollection } from 'geojson'
 import { useQuery } from '@tanstack/react-query'
