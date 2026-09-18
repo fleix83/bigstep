@@ -34,15 +34,13 @@ async function sha256Hex(buf: ArrayBuffer): Promise<string> {
 }
 
 function isHeic(file: File): boolean {
-  return (
-    /image\/hei[cf]/.test(file.type) || /\.hei[cf]$/i.test(file.name)
-  )
+  return /image\/hei[cf]/.test(file.type) || /\.hei[cf]$/i.test(file.name)
 }
 
-async function encodeScaled(
+async function encodeOnce(
   bitmap: ImageBitmap,
   maxDim: number
-): Promise<{ blob: Blob; ext: 'webp' | 'jpg' }> {
+): Promise<{ blob: Blob; ext: 'webp' | 'jpg' } | null> {
   const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height))
   const w = Math.max(1, Math.round(bitmap.width * scale))
   const h = Math.max(1, Math.round(bitmap.height * scale))
@@ -50,18 +48,47 @@ async function encodeScaled(
   canvas.width = w
   canvas.height = h
   const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Canvas-Kontext nicht verfügbar')
+  if (!ctx) return null
   ctx.drawImage(bitmap, 0, 0, w, h)
   const blob = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob(resolve, 'image/webp', 0.9)
   )
-  if (blob && blob.type === 'image/webp') return { blob, ext: 'webp' }
+  // Canvas sofort freigeben (mobile Browser haben enge Canvas-Speicherlimits).
+  const done = () => {
+    canvas.width = 0
+    canvas.height = 0
+  }
+  if (blob && blob.type === 'image/webp') {
+    done()
+    return { blob, ext: 'webp' }
+  }
   // WKWebView liefert kein WebP → JPEG-Fallback.
   const jpeg = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob(resolve, 'image/jpeg', 0.9)
   )
-  if (!jpeg) throw new Error('Bild-Encoding fehlgeschlagen')
-  return { blob: jpeg, ext: 'jpg' }
+  done()
+  return jpeg ? { blob: jpeg, ext: 'jpg' } : null
+}
+
+/**
+ * Ableitung erzeugen; schlägt das Encoding bei der Zielgrösse fehl (z. B.
+ * Canvas-/Speicherlimit auf Mobilgeräten), wird stufenweise kleiner encodiert.
+ */
+async function encodeScaled(
+  bitmap: ImageBitmap,
+  maxDim: number
+): Promise<{ blob: Blob; ext: 'webp' | 'jpg' }> {
+  const steps = [maxDim, ...[2000, 1600, 1200].filter((d) => d < maxDim)]
+  for (const dim of steps) {
+    try {
+      const r = await encodeOnce(bitmap, dim)
+      if (r) return r
+      console.warn(`[image-pipeline] Encoding bei ${dim}px fehlgeschlagen, versuche kleiner`)
+    } catch (err) {
+      console.warn(`[image-pipeline] Encoding bei ${dim}px: `, err)
+    }
+  }
+  throw new Error('Bild-Encoding fehlgeschlagen (Canvas/Speicher)')
 }
 
 /** Verarbeitet ein Originalbild zu sha256 + EXIF-Metadaten + Ableitungen. */
@@ -100,7 +127,17 @@ export async function processImageFile(file: File): Promise<ProcessedImage> {
   }
 
   // imageOrientation: EXIF-Rotation direkt beim Decodieren anwenden.
-  const bitmap = await createImageBitmap(decodable, { imageOrientation: 'from-image' })
+  let bitmap: ImageBitmap
+  try {
+    bitmap = await createImageBitmap(decodable, { imageOrientation: 'from-image' })
+  } catch (err) {
+    throw new Error(
+      `Bild konnte nicht dekodiert werden (${file.type || 'unbekannter Typ'}, ${Math.round(
+        file.size / 1024
+      )} KB): ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err }
+    )
+  }
   try {
     const display = await encodeScaled(bitmap, DISPLAY_MAX)
     const thumb = await encodeScaled(bitmap, THUMB_MAX)

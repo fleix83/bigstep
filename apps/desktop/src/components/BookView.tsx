@@ -743,6 +743,11 @@ function ImagesCard({
   const urls = useImageUrls(images)
   const uploading =
     mutations.addImages.isPending && mutations.addImages.variables?.cardId === card.id
+  // Fehlgeschlagener Import dieser Kachel: sichtbar machen statt still zu scheitern.
+  const uploadError =
+    mutations.addImages.isError && mutations.addImages.variables?.cardId === card.id
+      ? mutations.addImages.error
+      : null
 
   const active = images[Math.min(activeIdx, Math.max(images.length - 1, 0))]
   const activeUrls = active ? urls[active.id] : null
@@ -892,6 +897,22 @@ function ImagesCard({
           </>
         )}
       </div>
+
+      {uploadError && (
+        <div className="mx-4 mb-3 flex items-start justify-between gap-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">
+          <span>
+            Import fehlgeschlagen:{' '}
+            {uploadError instanceof Error ? uploadError.message : String(uploadError)}
+          </span>
+          <button
+            className="shrink-0 font-bold"
+            title="Ausblenden"
+            onClick={() => mutations.addImages.reset()}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {!readOnly && (
         <input

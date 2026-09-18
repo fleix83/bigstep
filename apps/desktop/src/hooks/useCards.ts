@@ -110,6 +110,7 @@ export function useCardMutations(tourId: string | null) {
       return results
     },
     onSuccess: invalidateImages,
+    onError: (err) => console.error('[addImages] Import fehlgeschlagen:', err),
   })
 
   const updateImage = useMutation({
