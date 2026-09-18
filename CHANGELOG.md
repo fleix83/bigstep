@@ -1,5 +1,9 @@
 # Changelog
 
+## Bildqualität erhöht (2026-09-18)
+
+- **Display-Ableitung 2560 px statt 2000 px** (längste Kante) und **Encoder-Qualität 0.9** (WebP; JPEG-Fallback auf WKWebView ebenfalls 0.9, vorher 0.82/0.85) in `apps/desktop/src/lib/image-pipeline.ts`. Sichtbar vor allem im Vollbild-Viewer auf Retina-/4K-Bildschirmen (kein Hochskalieren mehr bis 2560 px) sowie bei feinen Texturen und Himmelsverläufen. Display-Dateien werden ca. doppelt so gross (~0.5–1 MB); 2000 Bilder bleiben deutlich unter dem R2-Free-Tier. Gilt nur für neu importierte Bilder — bestehende Ableitungen sind content-addressed und werden nicht neu erzeugt.
+
 ## Touren-Sharing + Book-Feinschliff (2026-09-01)
 
 - **Touren teilen:** Jede eigene Tour lässt sich per «Teilen»-Knopf in der Topbar für alle User der App sichtbar machen (`tours.visibility` private/public, Migration `drizzle/0003_tour_sharing.sql` auf beiden Neon-Branches). Geteilte Touren erscheinen bei anderen Usern in der Tourenliste unter **«Von anderen geteilt»** (mit Owner-Name aus dem Neon-Auth-Verzeichnis, E-Mails bleiben privat) und sind strikt read-only — Karte, Kennzahlen, GPX-Export und das komplette Book inkl. Bildern aus R2 sind sichtbar, jede Schreiboperation (Tour/Cards/Bilder/R2-PUT) bleibt 404. Zurückschalten auf privat entzieht den Zugriff sofort.

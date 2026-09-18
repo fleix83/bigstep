@@ -65,7 +65,7 @@ export const images = pgTable('images', {
     .notNull()
     .references(() => cards.id),
   sha256: text('sha256').notNull().unique(), // Content-Adressierung
-  r2_key_display: text('r2_key_display'), // 2000px WebP (Phase 8)
+  r2_key_display: text('r2_key_display'), // 2560px WebP (Phase 8)
   r2_key_thumb: text('r2_key_thumb'), // 300px WebP (Phase 8)
   caption: text('caption'), // Untertitel unterm grossen Bild
   lat: doublePrecision('lat'), // aus EXIF

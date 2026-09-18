@@ -17,7 +17,7 @@ export interface ProcessedImage {
   lat: number | null
   lon: number | null
   taken_at: string | null
-  /** 2000-px-Ableitung (längste Kante). */
+  /** 2560-px-Ableitung (längste Kante). */
   displayBlob: Blob
   /** 300-px-Ableitung. */
   thumbBlob: Blob
@@ -25,7 +25,7 @@ export interface ProcessedImage {
   ext: 'webp' | 'jpg'
 }
 
-const DISPLAY_MAX = 2000
+const DISPLAY_MAX = 2560
 const THUMB_MAX = 300
 
 async function sha256Hex(buf: ArrayBuffer): Promise<string> {
@@ -53,12 +53,12 @@ async function encodeScaled(
   if (!ctx) throw new Error('Canvas-Kontext nicht verfügbar')
   ctx.drawImage(bitmap, 0, 0, w, h)
   const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, 'image/webp', 0.82)
+    canvas.toBlob(resolve, 'image/webp', 0.9)
   )
   if (blob && blob.type === 'image/webp') return { blob, ext: 'webp' }
   // WKWebView liefert kein WebP → JPEG-Fallback.
   const jpeg = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, 'image/jpeg', 0.85)
+    canvas.toBlob(resolve, 'image/jpeg', 0.9)
   )
   if (!jpeg) throw new Error('Bild-Encoding fehlgeschlagen')
   return { blob: jpeg, ext: 'jpg' }
