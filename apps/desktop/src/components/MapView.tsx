@@ -64,6 +64,8 @@ interface Props {
   /** Karten-Vollbild (Shell blendet Topbar/Sidebar/Tabs aus). */
   fullscreen?: boolean
   onToggleFullscreen?: () => void
+  /** Book-Modus (Desktop): Ortssuche und Kartenoptionen ausblenden (Platz fürs Book-Panel). */
+  hideControls?: boolean
 }
 
 export interface PhotoPin {
@@ -175,6 +177,7 @@ export function MapView({
   photos = [],
   onPhotoClick,
   fullscreen = false,
+  hideControls = false,
   onToggleFullscreen,
 }: Props) {
   const isMobile = useIsMobile()
@@ -541,7 +544,7 @@ export function MapView({
           Kartenoptionen (mittig würde sie mit der Reiter-Pille kollidieren), im
           Karten-Vollbild mittig. */}
       <div
-        className={`absolute left-12 right-24 top-2 z-10 ${
+        className={`absolute left-12 right-24 top-2 z-10 ${hideControls ? 'hidden' : ''} ${
           fullscreen
             ? 'md:left-1/2 md:right-auto md:w-80 md:-translate-x-1/2'
             : 'md:left-auto md:right-24 md:w-72'
@@ -550,7 +553,9 @@ export function MapView({
         <MapSearch onPick={handleSearchPick} />
       </div>
 
-      <div className="absolute right-2 top-2 z-20 flex flex-col items-end gap-2">
+      <div
+        className={`absolute right-2 top-2 z-20 flex flex-col items-end gap-2 ${hideControls ? 'hidden' : ''}`}
+      >
         <div className="flex gap-1">
           <button
             className="rounded-lg border border-gray-200 bg-white/95 px-2.5 py-1.5 text-sm shadow-md hover:bg-gray-50"

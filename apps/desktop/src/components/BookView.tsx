@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import type { Card, Image } from '@tourenbuch/shared'
@@ -129,7 +130,7 @@ export function BookView({
 
   const viewboxImages = viewbox ? (imagesByCard.get(viewbox.cardId) ?? []) : []
 
-  const overlays = (
+  const overlays = createPortal(
     <>
       {deleteCandidate && (
         <ConfirmDialog
@@ -165,7 +166,8 @@ export function BookView({
           onClose={() => setViewbox(null)}
         />
       )}
-    </>
+    </>,
+    document.body
   )
 
   const renderFullCard = (card: Card) =>
@@ -210,11 +212,11 @@ export function BookView({
     return (
       <div
         className={`flex h-full flex-col transition-[width] duration-200 ease-out ${
-          expanded ? 'w-[min(52rem,calc(100vw-22rem))]' : 'w-72'
+          expanded ? 'w-[min(64rem,calc(100vw-22rem))]' : 'w-[36rem]'
         }`}
       >
         {/* Kopf: rechtsbündig, immer in Spaltenbreite */}
-        <div className="ml-auto flex w-72 items-center justify-between gap-2 pb-2">
+        <div className="ml-auto flex w-[36rem] items-center justify-between gap-2 pb-2">
           <span className="rounded-full bg-white/90 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500 shadow-sm backdrop-blur">
             Book
           </span>
@@ -248,12 +250,12 @@ export function BookView({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
           {isLoading && (
-            <p className="ml-auto w-72 rounded-xl bg-white/90 p-3 text-xs text-gray-500">
+            <p className="ml-auto w-[36rem] rounded-xl bg-white/90 p-3 text-xs text-gray-500">
               Lade Kacheln …
             </p>
           )}
           {cards && cards.length === 0 && (
-            <p className="ml-auto w-72 rounded-xl bg-white/90 p-3 text-xs text-gray-500 shadow-sm">
+            <p className="ml-auto w-[36rem] rounded-xl bg-white/90 p-3 text-xs text-gray-500 shadow-sm">
               {readOnly ? 'Noch keine Kacheln.' : 'Noch keine Kacheln – «+ Text» oder «+ Bilder».'}
             </p>
           )}
@@ -335,7 +337,7 @@ function CompactTile({
   images: Image[]
   onExpand: () => void
 }) {
-  const preview = images.slice(0, 4)
+  const preview = images.slice(0, 6)
   const urls = useImageUrls(preview)
   const more = images.length - preview.length
   const snippet = card.body_md ? plainSnippet(card.body_md) : ''
@@ -343,7 +345,7 @@ function CompactTile({
   return (
     <button
       id={`card-${card.id}`}
-      className="group ml-auto block w-72 rounded-xl border border-white/60 bg-white/95 p-3 text-left shadow-md backdrop-blur-md transition hover:-translate-x-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      className="group ml-auto block w-[36rem] rounded-xl border border-white/60 bg-white/95 p-3 text-left shadow-md backdrop-blur-md transition hover:-translate-x-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
       title="Aufklappen"
       onClick={onExpand}
     >
@@ -371,7 +373,7 @@ function CompactTile({
             images.length === 0 ? (
               <div className="mt-1.5 text-xs text-gray-400">Noch keine Bilder</div>
             ) : (
-              <div className="mt-2 grid grid-cols-4 gap-1">
+              <div className="mt-2 grid grid-cols-6 gap-1.5">
                 {preview.map((img, i) => {
                   const u = urls[img.id]
                   const last = i === preview.length - 1 && more > 0
@@ -393,7 +395,7 @@ function CompactTile({
             )
           ) : (
             snippet && (
-              <div className="mt-1 line-clamp-3 text-xs leading-snug text-gray-500">{snippet}</div>
+              <div className="mt-1 line-clamp-4 text-sm leading-snug text-gray-600">{snippet}</div>
             )
           )}
         </div>

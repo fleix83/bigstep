@@ -248,12 +248,13 @@ function Shell() {
             photos={photoPins}
             onPhotoClick={(cardId) => {
               setFullscreen(false)
-              // Desktop: Kachel im Book-Panel auf der Karte aufklappen; mobil in den Book-Reiter.
-              if (!window.matchMedia('(min-width: 768px)').matches) setTab('book')
+              // Book-Modus: Desktop klappt die Kachel im Panel auf, mobil zeigt der Reiter das Grid.
+              setTab('book')
               setHighlightCardId(cardId)
             }}
             fullscreen={fullscreen}
             onToggleFullscreen={() => setFullscreen((f) => !f)}
+            hideControls={tab === 'book'}
           />
 
           {/* Editor-Toolbar */}
@@ -333,11 +334,11 @@ function Shell() {
             </div>
           )}
 
-          {/* Book-Panel (Desktop): Kacheln kompakt rechts auf der Karte, einzeln nach
-              links aufklappbar. Unterhalb der Kartenoptionen-Buttons; deren Dropdown
-              (z-20) liegt bewusst über dem Panel (z-10). */}
-          {tab === 'karte' && selectedTour && !fullscreen && (
-            <div className="absolute bottom-3 right-3 top-[3.25rem] z-10 hidden md:block">
+          {/* Book-Modus auf Desktop: Kacheln kompakt als schwebende Spalte rechts auf der
+              Karte, einzeln nach links aufklappbar. Kartenoptionen/Ortssuche sind dabei
+              ausgeblendet (hideControls). */}
+          {tab === 'book' && selectedTour && !fullscreen && (
+            <div className="absolute bottom-3 right-3 top-3 z-10 hidden md:block">
               <BookView
                 variant="panel"
                 tourId={selectedTour.id}
@@ -349,10 +350,9 @@ function Shell() {
             </div>
           )}
 
-          {/* Book liegt über der Karte; auf Desktop rechts der schwebenden Sidebar
-              und unterhalb der Reiter-Pille. */}
+          {/* Book-Modus mobil: Grid als Overlay über der Karte (Desktop nutzt das Panel). */}
           {tab === 'book' && (
-            <div className="absolute inset-0 z-20 bg-gray-100 md:pl-[19.75rem] md:pt-[3.75rem]">
+            <div className="absolute inset-0 z-20 bg-gray-100 md:hidden">
               {selectedTour ? (
                 <BookView
                   tourId={selectedTour.id}

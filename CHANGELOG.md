@@ -1,5 +1,13 @@
 # Changelog
 
+## Book-Modus: Panel nur im Book-Reiter, doppelt breit; Viewer über allem (2026-09-18)
+
+- **Book-Reiter auf Desktop = Karte + Book-Panel.** Die Kachel-Spalte erscheint nur noch, wenn «Book» in der Nav aktiv ist; im Karten-Reiter ist die Karte frei. Das frühere Grid gibt es auf Desktop nicht mehr (mobil unverändert als Overlay).
+- **Kartenoptionen und Ortssuche im Book-Modus ausgeblendet** (`MapView hideControls`), damit nichts über den Kacheln liegt; das Panel beginnt dadurch oben bündig mit Sidebar und Reiter-Pille.
+- **Spalte doppelt so breit** (36 rem statt 18 rem): kompakte Kacheln zeigen 6 Thumbnails bzw. 4 Zeilen Textvorschau, lesbar bei gleichzeitiger Sicht auf die Karte. Aufgeklappt bis 64 rem.
+- **Viewbox und Bestätigungsdialoge via Portal an `document.body`:** Der Vollbild-Viewer war innerhalb der Stacking-Kontexte von Panel/Sidebar/Nav gefangen und wurde von diesen überlagert. Jetzt liegt er über allem.
+- Verifiziert auf Produktion: Panel nur im Book-Modus, Controls ausgeblendet, 576 px Spaltenbreite, Viewer deckt Sidebar und Nav (elementFromPoint), Auf-/Einklappen.
+
 ## Book-Panel auf der Karte + Logo-Abstände (2026-09-18)
 
 - **Book-Kacheln direkt auf der Karte** (Desktop): rechts eine schwebende Spalte (`BookView variant="panel"`) mit den Kacheln kompakt untereinander — Datum, Titel, Text-Vorschau (Markdown zu Fliesstext, 3 Zeilen) bzw. bis zu 4 Thumbnails mit «+N». Klick auf eine Kachel klappt sie **nach links über die Karte** auf (Spalte weitet sich auf `min(52rem, 100vw − 22rem)`, Übergang animiert); die aufgeklappte Kachel ist die volle Text-/Bilder-Kachel inkl. Bearbeiten, Upload, Untertitel und Viewbox, die übrigen bleiben rechts kompakt. Einklappen über den Chevron in der Kachel-Kopfzeile; höchstens eine offen. «+ Text»/«+ Bilder» im Spaltenkopf legen an und klappen direkt auf.
