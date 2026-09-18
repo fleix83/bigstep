@@ -1,5 +1,15 @@
 # Changelog
 
+## App-Shell: schwebende Sidebar, Logo, Suche, keine Topbar (2026-09-18)
+
+- **Topbar entfernt.** User (Avatar-Initiale + E-Mail), Einstellungen und Abmelden sitzen jetzt als Fusszeile unten in der Sidebar (SVG-Icons); der Upload-Status («☁︎ lädt hoch …») ebenfalls dort.
+- **Sidebar als schwebende Karte** (Desktop ≥ md): `rounded-lg` (0.5 rem), Rahmen, Schatten, `bg-white/95` + Backdrop-Blur, 0.75 rem Abstand zum Rand, liegt über der Karte bzw. dem Book. Mobil unverändert als Startscreen im Fluss.
+- **Logo «Tourenbuch»** oben links in der Sidebar in Handschrift (Caveat 700, SIL OFL, selbst gehostet unter `public/fonts/` – funktioniert offline in der PWA) mit handgezogener blauer Unterstreichung; Login-Screen nutzt dieselbe Wortmarke.
+- **Kopfzeile der Sidebar:** «+ Neu» (kompakt) und ein Suchfeld auf derselben Zeile; die A–Z-Sortierung ist weg. Die Suche filtert eigene und geteilte Touren nach Name (bzw. Owner-Name), leere Treffer zeigen «Keine Tour passt zur Suche.».
+- **Reiter-Leiste als schwebende Pille** rechts der Sidebar (Karte/Book als Segmented Control, GPX-Import/-Export, Teilen, Tour-Name gekürzt); mobil weiterhin als Leiste mit «‹ Touren». Karten-Overlays folgen: Zoomsteuerung unter die Pille (`.map-floating .maplibregl-ctrl-top-left`), Editor-Toolbar daneben, Kennzahlen/Editor-Hinweis mittig im Kartenbereich, Ortssuche rechts neben den Kartenoptionen (im Karten-Vollbild wieder mittig). Book-Overlay mit Innenabstand für Sidebar und Pille.
+- **Viewbox:** Untertitel bleibt dauerhaft sichtbar (blendet nicht mehr mit den Bedienelementen aus).
+- Verifiziert auf Produktion (Chrome, Desktop): Layout Karte + Book, Suche, Editor-Toolbar/Zoom-Position, Caption im Viewer. Mobile-Layout nicht visuell geprüft (Fenster liess sich nicht verkleinern) – Klassen entsprechen dem bisherigen Fluss-Layout.
+
 ## Book: Text-Umbruch + Vollbild-Viewer (2026-09-18)
 
 - **Text-Kachel bricht um:** Der Titel ist jetzt eine automatisch wachsende Textarea statt eines einzeiligen Inputs (lange Überschriften wurden abgeschnitten; Enter = fertig). Markdown-Text respektiert einfache Zeilenumbrüche (`breaks: true`), Absätze/Listen/Überschriften haben Abstände (das `prose`-Utility war wirkungslos, kein Typography-Plugin), lange Wörter/URLs brechen (`overflow-wrap: anywhere`).

@@ -1,7 +1,29 @@
 @import 'tailwindcss';
 
+/* Logo-Schrift (Caveat, SIL OFL) – selbst gehostet, damit sie auch offline (PWA) da ist. */
+@font-face {
+  font-family: 'Caveat';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/caveat-700-latin.woff2') format('woff2');
+}
+
+@theme {
+  --font-logo: 'Caveat', 'Bradley Hand', 'Segoe Script', 'Comic Sans MS', cursive;
+}
+
 html,
 body,
 #root {
   height: 100%;
+}
+
+/* Desktop-Layout: Sidebar schwebt links über der Karte, Reiter-Pille oben daneben.
+   Die MapLibre-Zoomsteuerung wandert deshalb nach rechts unter die Pille. */
+@media (min-width: 768px) {
+  .map-floating .maplibregl-ctrl-top-left {
+    left: 19.75rem;
+    top: 3.25rem;
+  }
 }

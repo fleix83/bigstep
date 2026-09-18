@@ -276,9 +276,7 @@ export function MapView({
       attributionControl: false,
     })
     // Attribution «© swisstopo» dauerhaft sichtbar (PRD F2, Pflicht).
-    map.addControl(
-      new AttributionControl({ compact: false, customAttribution: '© swisstopo' })
-    )
+    map.addControl(new AttributionControl({ compact: false, customAttribution: '© swisstopo' }))
     map.addControl(new NavigationControl({ showCompass: false }), 'top-left')
     // Standort-Button unten rechts (v. a. mobile PWA): GPS-Position mit
     // Puck und Genauigkeitskreis; braucht Secure Context (https/localhost).
@@ -373,8 +371,7 @@ export function MapView({
     if (!map || !ready || !editor) return
     editor.waypoints.forEach((wp, i) => {
       const el = document.createElement('div')
-      const color =
-        i === 0 ? '#16a34a' : i === editor.waypoints.length - 1 ? '#dc2626' : '#2563eb'
+      const color = i === 0 ? '#16a34a' : i === editor.waypoints.length - 1 ? '#dc2626' : '#2563eb'
       el.style.cssText = `width:14px;height:14px;border-radius:50%;background:${color};border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:grab`
       el.title = 'Ziehen zum Verschieben, Rechtsklick zum Löschen'
       el.addEventListener('contextmenu', (ev) => {
@@ -537,11 +534,19 @@ export function MapView({
   }, [visible, fullscreen])
 
   return (
-    <div className="relative h-full w-full">
+    <div className={`relative h-full w-full ${fullscreen ? '' : 'map-floating'}`}>
       <div ref={containerRef} className="h-full w-full" />
 
-      {/* Ortssuche: mittig auf Desktop, volle Breite auf dem Smartphone. */}
-      <div className="absolute left-12 right-24 top-2 z-10 md:left-1/2 md:right-auto md:w-80 md:-translate-x-1/2">
+      {/* Ortssuche: volle Breite auf dem Smartphone; auf Desktop rechts neben den
+          Kartenoptionen (mittig würde sie mit der Reiter-Pille kollidieren), im
+          Karten-Vollbild mittig. */}
+      <div
+        className={`absolute left-12 right-24 top-2 z-10 ${
+          fullscreen
+            ? 'md:left-1/2 md:right-auto md:w-80 md:-translate-x-1/2'
+            : 'md:left-auto md:right-24 md:w-72'
+        }`}
+      >
         <MapSearch onPick={handleSearchPick} />
       </div>
 
@@ -565,63 +570,63 @@ export function MapView({
           )}
         </div>
 
-      {ui && panelOpen && (
-        <div className="w-48 rounded-lg border border-gray-200 bg-white/95 p-3 shadow-md">
-          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Basiskarte
-          </div>
-          {(Object.entries(BASE_LAYERS) as [BaseKey, (typeof BASE_LAYERS)[BaseKey]][]).map(
-            ([key, def]) => (
+        {ui && panelOpen && (
+          <div className="w-48 rounded-lg border border-gray-200 bg-white/95 p-3 shadow-md">
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Basiskarte
+            </div>
+            {(Object.entries(BASE_LAYERS) as [BaseKey, (typeof BASE_LAYERS)[BaseKey]][]).map(
+              ([key, def]) => (
+                <label key={key} className="flex cursor-pointer items-center gap-2 py-0.5 text-sm">
+                  <input
+                    type="radio"
+                    name="base"
+                    checked={ui.base === key}
+                    onChange={() => setUi({ ...ui, base: key })}
+                  />
+                  {def.label}
+                </label>
+              )
+            )}
+
+            <div className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Overlays
+            </div>
+            {OVERLAY_KEYS.map((key) => (
               <label key={key} className="flex cursor-pointer items-center gap-2 py-0.5 text-sm">
                 <input
-                  type="radio"
-                  name="base"
-                  checked={ui.base === key}
-                  onChange={() => setUi({ ...ui, base: key })}
+                  type="checkbox"
+                  checked={ui.overlays[key]}
+                  onChange={(e) =>
+                    setUi({ ...ui, overlays: { ...ui.overlays, [key]: e.target.checked } })
+                  }
                 />
-                {def.label}
+                {OVERLAY_LAYERS[key].label}
               </label>
-            )
-          )}
+            ))}
 
-          <div className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Overlays
+            <div className="mt-3 border-t border-gray-100 pt-2">
+              <label className="flex cursor-pointer items-center gap-2 py-0.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={ui.showOthers}
+                  onChange={(e) => setUi({ ...ui, showOthers: e.target.checked })}
+                />
+                Andere Touren
+              </label>
+              <label className="flex items-center justify-between gap-2 py-1 text-sm">
+                Routenfarbe
+                <input
+                  type="color"
+                  value={routeColor}
+                  onChange={(e) => handleRouteColor(e.target.value)}
+                  className="h-6 w-10 cursor-pointer rounded border border-gray-200"
+                  title="Farbe der Routenlinie (pro Konto gespeichert)"
+                />
+              </label>
+            </div>
           </div>
-          {OVERLAY_KEYS.map((key) => (
-            <label key={key} className="flex cursor-pointer items-center gap-2 py-0.5 text-sm">
-              <input
-                type="checkbox"
-                checked={ui.overlays[key]}
-                onChange={(e) =>
-                  setUi({ ...ui, overlays: { ...ui.overlays, [key]: e.target.checked } })
-                }
-              />
-              {OVERLAY_LAYERS[key].label}
-            </label>
-          ))}
-
-          <div className="mt-3 border-t border-gray-100 pt-2">
-            <label className="flex cursor-pointer items-center gap-2 py-0.5 text-sm">
-              <input
-                type="checkbox"
-                checked={ui.showOthers}
-                onChange={(e) => setUi({ ...ui, showOthers: e.target.checked })}
-              />
-              Andere Touren
-            </label>
-            <label className="flex items-center justify-between gap-2 py-1 text-sm">
-              Routenfarbe
-              <input
-                type="color"
-                value={routeColor}
-                onChange={(e) => handleRouteColor(e.target.value)}
-                className="h-6 w-10 cursor-pointer rounded border border-gray-200"
-                title="Farbe der Routenlinie (pro Konto gespeichert)"
-              />
-            </label>
-          </div>
-        </div>
-      )}
+        )}
       </div>
 
       {tour && !tour.geometry && !editor && (

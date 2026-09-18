@@ -1,32 +1,73 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Tour } from '@tourenbuch/shared'
 import { useSharedTours, useTours, useTourMutations } from '../hooks/useTours'
+import type { UploadQueueStatus } from '../hooks/useUploadQueue'
 import { formatDistance, formatDuration, formatMeters } from '../lib/format'
 import { StatusBadge } from './StatusBadge'
 import { ConfirmDialog } from './ConfirmDialog'
-
-type SortMode = 'updated' | 'name'
 
 interface Props {
   selectedId: string | null
   onSelect: (id: string | null) => void
   /** PWA/Mobile: Editier-Controls werden nicht gerendert (PRD F6). */
   readOnly?: boolean
+  /** Fusszeile: eingeloggter User, Einstellungen, Abmelden, Upload-Status. */
+  userEmail: string
+  onSignOut: () => void
+  onOpenSettings: () => void
+  uploadStatus: UploadQueueStatus
 }
 
-export function TourList({ selectedId, onSelect, readOnly = false }: Props) {
+/** Wortmarke «Tourenbuch» in Handschrift mit handgezogener Unterstreichung. */
+function Logo() {
+  return (
+    <div className="relative inline-block select-none pr-2" aria-label="Tourenbuch">
+      <span className="font-logo text-[2.125rem] leading-none tracking-wide text-gray-900">
+        Tourenbuch
+      </span>
+      <svg
+        className="absolute -bottom-1 left-0.5 h-2 w-[calc(100%-0.75rem)] text-blue-600"
+        viewBox="0 0 100 8"
+        preserveAspectRatio="none"
+        fill="none"
+        aria-hidden="true"
+      >
+        <path
+          d="M1.5 5.5 C 18 2.5, 38 7, 58 4 S 88 2, 98.5 4.5"
+          stroke="currentColor"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+        />
+      </svg>
+    </div>
+  )
+}
+
+export function TourList({
+  selectedId,
+  onSelect,
+  readOnly = false,
+  userEmail,
+  onSignOut,
+  onOpenSettings,
+  uploadStatus,
+}: Props) {
   const { data: tours, isLoading, error: loadError } = useTours()
   const { data: sharedTours } = useSharedTours()
-  const [sortMode, setSortMode] = useState<SortMode>('updated')
+  const [query, setQuery] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deleteCandidate, setDeleteCandidate] = useState<Tour | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const { createTour, updateTour, deleteTour } = useTourMutations(setErrorMessage)
 
-  const sorted =
-    sortMode === 'name'
-      ? [...(tours ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'de'))
-      : (tours ?? []) // Server liefert bereits updated_at desc
+  // Server liefert bereits updated_at desc; Suche filtert nach Name (und Owner bei geteilten).
+  const q = query.trim().toLocaleLowerCase('de')
+  const matches = (t: Tour & { owner_name?: string | null }) =>
+    !q ||
+    t.name.toLocaleLowerCase('de').includes(q) ||
+    (t.owner_name ?? '').toLocaleLowerCase('de').includes(q)
+  const sorted = (tours ?? []).filter(matches)
+  const sharedFiltered = (sharedTours ?? []).filter(matches)
 
   function handleCreate() {
     createTour.mutate(
@@ -55,25 +96,45 @@ export function TourList({ selectedId, onSelect, readOnly = false }: Props) {
   }
 
   return (
-    <aside className="flex h-full w-full shrink-0 flex-col border-r border-gray-200 bg-gray-50 md:w-72">
-      <div className="flex items-center justify-between gap-2 border-b border-gray-200 p-3">
-        {readOnly ? (
-          <span className="flex-1 px-1 text-sm font-semibold text-gray-700">Touren</span>
-        ) : (
-          <button
-            className="flex-1 rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-            onClick={handleCreate}
-          >
-            + Neue Tour
-          </button>
-        )}
-        <button
-          className="rounded border border-gray-300 px-2 py-2 text-xs text-gray-600 hover:bg-gray-100"
-          title={sortMode === 'updated' ? 'Alphabetisch sortieren' : 'Nach Änderung sortieren'}
-          onClick={() => setSortMode(sortMode === 'updated' ? 'name' : 'updated')}
-        >
-          {sortMode === 'updated' ? 'A–Z' : '🕓'}
-        </button>
+    <aside className="flex h-full w-full flex-col bg-gray-50 md:overflow-hidden md:rounded-lg md:border md:border-gray-200 md:bg-white/95 md:shadow-xl md:backdrop-blur-md">
+      <div className="border-b border-gray-200 px-3 pb-3 pt-3">
+        <div className="mb-3 px-1">
+          <Logo />
+        </div>
+        <div className="flex items-center gap-2">
+          {!readOnly && (
+            <button
+              className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              title="Neue Tour anlegen"
+              onClick={handleCreate}
+            >
+              + Neu
+            </button>
+          )}
+          <label className="relative min-w-0 flex-1">
+            <svg
+              className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Touren suchen …"
+              aria-label="Touren suchen"
+              className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-2 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-blue-400"
+            />
+          </label>
+        </div>
       </div>
 
       {errorMessage && (
@@ -93,7 +154,9 @@ export function TourList({ selectedId, onSelect, readOnly = false }: Props) {
           </p>
         )}
         {sorted.length === 0 && !isLoading && !loadError && (
-          <p className="p-4 text-sm text-gray-500">Noch keine Touren.</p>
+          <p className="p-4 text-sm text-gray-500">
+            {q ? 'Keine Tour passt zur Suche.' : 'Noch keine Touren.'}
+          </p>
         )}
         <ul>
           {sorted.map((tour) => (
@@ -117,13 +180,13 @@ export function TourList({ selectedId, onSelect, readOnly = false }: Props) {
           ))}
         </ul>
 
-        {sharedTours && sharedTours.length > 0 && (
+        {sharedFiltered.length > 0 && (
           <>
             <div className="border-b border-t border-gray-200 bg-gray-100 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               Von anderen geteilt
             </div>
             <ul>
-              {sharedTours.map((tour) => (
+              {sharedFiltered.map((tour) => (
                 <TourListItem
                   key={tour.id}
                   tour={tour}
@@ -141,6 +204,70 @@ export function TourList({ selectedId, onSelect, readOnly = false }: Props) {
             </ul>
           </>
         )}
+      </div>
+
+      {/* Fusszeile: User, Einstellungen, Abmelden (ersetzt die frühere Topbar). */}
+      <div className="border-t border-gray-200 px-3 py-2">
+        {uploadStatus.pending > 0 && (
+          <div
+            className="mb-2 inline-block rounded-full bg-blue-50 px-2.5 py-0.5 text-xs text-blue-700"
+            title="Bilder werden nach R2 hochgeladen"
+          >
+            ☁︎ {uploadStatus.uploading ? 'lädt hoch …' : 'ausstehend:'} {uploadStatus.pending}
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <div
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold uppercase text-blue-700"
+            aria-hidden="true"
+          >
+            {userEmail.charAt(0) || '?'}
+          </div>
+          <span className="min-w-0 flex-1 truncate text-xs text-gray-500" title={userEmail}>
+            {userEmail}
+          </span>
+          <button
+            className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+            title="Einstellungen"
+            aria-label="Einstellungen"
+            onClick={onOpenSettings}
+          >
+            <svg
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+            </svg>
+          </button>
+          <button
+            className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+            title="Abmelden"
+            aria-label="Abmelden"
+            onClick={onSignOut}
+          >
+            <svg
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <path d="m16 17 5-5-5-5" />
+              <path d="M21 12H9" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {deleteCandidate && (

@@ -59,7 +59,7 @@ export function LoginScreen({ auth, onSignedIn, onOpenSettings }: Props) {
   return (
     <div className="flex h-full items-center justify-center bg-gray-50 p-4">
       <form onSubmit={submit} className="w-full max-w-sm rounded-xl bg-white p-6 shadow-lg">
-        <h1 className="mb-1 text-xl font-semibold text-gray-900">Tourenbuch</h1>
+        <h1 className="mb-1 font-logo text-4xl leading-none text-gray-900">Tourenbuch</h1>
         <p className="mb-5 text-sm text-gray-500">
           {mode === 'signin' ? 'Melde dich an.' : 'Konto erstellen.'}
         </p>

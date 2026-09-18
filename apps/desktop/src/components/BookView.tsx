@@ -986,7 +986,9 @@ function Viewbox({
 
       {img?.caption && (
         <div
-          className={`absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/70 to-transparent px-[max(1.5rem,env(safe-area-inset-left))] pb-[max(1rem,env(safe-area-inset-bottom))] pt-12 text-center ${controlCls}`}
+          // Untertitel bleibt immer sichtbar (blendet nicht mit den Controls aus).
+          className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/70 to-transparent px-[max(1.5rem,env(safe-area-inset-left))] pb-[max(1rem,env(safe-area-inset-bottom))] pt-12 text-center"
+
           onClick={(e) => e.stopPropagation()}
         >
           <p className="mx-auto max-w-3xl text-base text-gray-100 [text-shadow:0_1px_2px_rgba(0,0,0,.6)] md:text-lg">
