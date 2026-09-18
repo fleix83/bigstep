@@ -1,5 +1,13 @@
 # Changelog
 
+## Book-Panel auf der Karte + Logo-Abstände (2026-09-18)
+
+- **Book-Kacheln direkt auf der Karte** (Desktop): rechts eine schwebende Spalte (`BookView variant="panel"`) mit den Kacheln kompakt untereinander — Datum, Titel, Text-Vorschau (Markdown zu Fliesstext, 3 Zeilen) bzw. bis zu 4 Thumbnails mit «+N». Klick auf eine Kachel klappt sie **nach links über die Karte** auf (Spalte weitet sich auf `min(52rem, 100vw − 22rem)`, Übergang animiert); die aufgeklappte Kachel ist die volle Text-/Bilder-Kachel inkl. Bearbeiten, Upload, Untertitel und Viewbox, die übrigen bleiben rechts kompakt. Einklappen über den Chevron in der Kachel-Kopfzeile; höchstens eine offen. «+ Text»/«+ Bilder» im Spaltenkopf legen an und klappen direkt auf.
+- Foto-Pin-Klick öffnet auf Desktop die Kachel im Panel (bleibt auf der Karte), mobil weiterhin den Book-Reiter. Der Book-Reiter selbst bleibt unverändert (Grid).
+- Kartenoptionen-Dropdown liegt über dem Panel (z-20 vs. z-10); Kennzahlen mittig zwischen Sidebar und Panel. Bugfix: die Desktop-Versätze von Editor-Toolbar/Kennzahlen/Hinweis galten fälschlich auch im Karten-Vollbild.
+- Logo in der Sidebar (Desktop): Abstand 12 px oben / 31 px unten.
+- Verifiziert auf Produktion: Panel-Render, Auf-/Einklappen beider Kachel-Typen, Dropdown über Panel, Logo-Margins.
+
 ## App-Shell: schwebende Sidebar, Logo, Suche, keine Topbar (2026-09-18)
 
 - **Topbar entfernt.** User (Avatar-Initiale + E-Mail), Einstellungen und Abmelden sitzen jetzt als Fusszeile unten in der Sidebar (SVG-Icons); der Upload-Status («☁︎ lädt hoch …») ebenfalls dort.

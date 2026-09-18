@@ -248,7 +248,8 @@ function Shell() {
             photos={photoPins}
             onPhotoClick={(cardId) => {
               setFullscreen(false)
-              setTab('book')
+              // Desktop: Kachel im Book-Panel auf der Karte aufklappen; mobil in den Book-Reiter.
+              if (!window.matchMedia('(min-width: 768px)').matches) setTab('book')
               setHighlightCardId(cardId)
             }}
             fullscreen={fullscreen}
@@ -257,7 +258,9 @@ function Shell() {
 
           {/* Editor-Toolbar */}
           {!readOnly && isOwner && tab === 'karte' && selectedTour && (
-            <div className="absolute left-14 top-2 z-10 flex items-center gap-1 rounded-lg border border-gray-200 bg-white/95 px-2 py-1.5 shadow-md md:left-[22.75rem] md:top-[3.875rem]">
+            <div
+              className={`absolute left-14 top-2 z-10 flex items-center gap-1 rounded-lg border border-gray-200 bg-white/95 px-2 py-1.5 shadow-md ${fullscreen ? '' : 'md:left-[22.75rem] md:top-[3.875rem]'}`}
+            >
               {!editing ? (
                 <button
                   className="rounded px-2 py-1 text-sm font-medium text-blue-700 hover:bg-blue-50"
@@ -310,7 +313,9 @@ function Shell() {
 
           {/* Kennzahlen-Leiste (PRD F3) */}
           {tab === 'karte' && statsSource && (statsSource.distance_m > 0 || editing) && (
-            <div className="absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-gray-200 bg-white/95 px-4 py-1.5 text-sm text-gray-800 shadow-md md:left-[calc(50%+9.875rem)]">
+            <div
+              className={`absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-gray-200 bg-white/95 px-4 py-1.5 text-sm text-gray-800 shadow-md ${fullscreen ? '' : 'md:left-[calc(50%+0.125rem)]'}`}
+            >
               {(statsSource.distance_m / 1000).toFixed(1)} km
               <span className="mx-2 text-gray-300">·</span>↑ {statsSource.ascent_m ?? '–'} m
               <span className="mx-2 text-gray-300">·</span>↓ {statsSource.descent_m ?? '–'} m
@@ -320,14 +325,32 @@ function Shell() {
           )}
 
           {editing && (
-            <div className="absolute bottom-16 left-1/2 z-10 -translate-x-1/2 rounded bg-gray-900/75 px-3 py-1 text-xs text-white md:left-[calc(50%+9.875rem)]">
+            <div
+              className={`absolute bottom-16 left-1/2 z-10 -translate-x-1/2 rounded bg-gray-900/75 px-3 py-1 text-xs text-white ${fullscreen ? '' : 'md:left-[calc(50%+0.125rem)]'}`}
+            >
               Klick: Punkt anhängen · Klick auf Linie: Punkt einfügen · Ziehen: verschieben ·
               Rechtsklick: löschen
             </div>
           )}
 
+          {/* Book-Panel (Desktop): Kacheln kompakt rechts auf der Karte, einzeln nach
+              links aufklappbar. Unterhalb der Kartenoptionen-Buttons; deren Dropdown
+              (z-20) liegt bewusst über dem Panel (z-10). */}
+          {tab === 'karte' && selectedTour && !fullscreen && (
+            <div className="absolute bottom-3 right-3 top-[3.25rem] z-10 hidden md:block">
+              <BookView
+                variant="panel"
+                tourId={selectedTour.id}
+                tourName={selectedTour.name}
+                highlightCardId={highlightCardId}
+                onHighlightDone={() => setHighlightCardId(null)}
+                readOnly={!isOwner}
+              />
+            </div>
+          )}
+
           {/* Book liegt über der Karte; auf Desktop rechts der schwebenden Sidebar
-                und unterhalb der Reiter-Pille. */}
+              und unterhalb der Reiter-Pille. */}
           {tab === 'book' && (
             <div className="absolute inset-0 z-20 bg-gray-100 md:pl-[19.75rem] md:pt-[3.75rem]">
               {selectedTour ? (

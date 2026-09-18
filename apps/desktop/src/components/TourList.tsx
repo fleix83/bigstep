@@ -97,8 +97,9 @@ export function TourList({
 
   return (
     <aside className="flex h-full w-full flex-col bg-gray-50 md:overflow-hidden md:rounded-lg md:border md:border-gray-200 md:bg-white/95 md:shadow-xl md:backdrop-blur-md">
-      <div className="border-b border-gray-200 px-3 pb-3 pt-3">
-        <div className="mb-3 px-1">
+      <div className="border-b border-gray-200 px-3 pb-3 pt-3 md:pt-0">
+        {/* Desktop: Logo-Abstand 12px oben / 31px unten (Vorgabe). */}
+        <div className="mb-3 px-1 md:mb-[31px] md:mt-3">
           <Logo />
         </div>
         <div className="flex items-center gap-2">

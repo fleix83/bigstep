@@ -16,6 +16,24 @@ interface Props {
   onHighlightDone: () => void
   /** Fremde (geteilte) Touren: Editier-Controls werden nicht gerendert. */
   readOnly?: boolean
+  /**
+   * 'page': Book-Reiter (Grid). 'panel': schmale Spalte rechts auf der Karte —
+   * Kacheln kompakt untereinander, eine davon nach links über die Karte aufklappbar.
+   */
+  variant?: 'page' | 'panel'
+}
+
+/** Markdown grob zu Fliesstext für die Kompaktansicht (Kachel-Vorschau). */
+function plainSnippet(md: string): string {
+  return md
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '• ')
+    .replace(/[*_`>~]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function renderMarkdown(md: string): string {
@@ -61,7 +79,9 @@ export function BookView({
   highlightCardId,
   onHighlightDone,
   readOnly = false,
+  variant = 'page',
 }: Props) {
+  const panel = variant === 'panel'
   const { data: cards, isLoading } = useCards(tourId)
   const { data: images } = useTourImages(tourId)
   const mutations = useCardMutations(tourId)
@@ -69,10 +89,13 @@ export function BookView({
   const [imageDeleteCandidate, setImageDeleteCandidate] = useState<Image | null>(null)
   const [viewbox, setViewbox] = useState<ViewboxState | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
+  // Panel: die aktuell nach links aufgeklappte Kachel (höchstens eine).
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  // Zu markierter Card scrollen (Foto-Pin-Klick).
+  // Zu markierter Card scrollen (Foto-Pin-Klick); im Panel zusätzlich aufklappen.
   useEffect(() => {
     if (!highlightCardId) return
+    if (panel) setExpandedId(highlightCardId)
     const el = document.getElementById(`card-${highlightCardId}`)
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -84,7 +107,7 @@ export function BookView({
       return () => window.clearTimeout(t)
     }
     onHighlightDone()
-  }, [highlightCardId, onHighlightDone, cards])
+  }, [highlightCardId, onHighlightDone, cards, panel, expandedId])
 
   const handleDrop = (targetId: string) => {
     if (!dragId || !cards || dragId === targetId) return
@@ -105,6 +128,157 @@ export function BookView({
   }
 
   const viewboxImages = viewbox ? (imagesByCard.get(viewbox.cardId) ?? []) : []
+
+  const overlays = (
+    <>
+      {deleteCandidate && (
+        <ConfirmDialog
+          title="Kachel löschen?"
+          message={`«${deleteCandidate.title || 'Ohne Titel'}» wird ${
+            deleteCandidate.kind === 'images' ? 'samt Bildern ' : ''
+          }gelöscht.`}
+          onConfirm={() => {
+            mutations.deleteCard.mutate(deleteCandidate.id)
+            setDeleteCandidate(null)
+          }}
+          onCancel={() => setDeleteCandidate(null)}
+        />
+      )}
+
+      {imageDeleteCandidate && (
+        <ConfirmDialog
+          title="Bild entfernen?"
+          message="Das Bild wird aus der Kachel entfernt und die Ableitungen gelöscht."
+          onConfirm={() => {
+            mutations.deleteImage.mutate(imageDeleteCandidate)
+            setImageDeleteCandidate(null)
+          }}
+          onCancel={() => setImageDeleteCandidate(null)}
+        />
+      )}
+
+      {viewbox && viewboxImages.length > 0 && (
+        <Viewbox
+          images={viewboxImages}
+          index={Math.min(viewbox.index, viewboxImages.length - 1)}
+          onNavigate={(index) => setViewbox({ ...viewbox, index })}
+          onClose={() => setViewbox(null)}
+        />
+      )}
+    </>
+  )
+
+  const renderFullCard = (card: Card) =>
+    card.kind === 'images' ? (
+      <ImagesCard
+        key={card.id}
+        card={card}
+        images={imagesByCard.get(card.id) ?? []}
+        mutations={mutations}
+        readOnly={readOnly}
+        onDelete={() => setDeleteCandidate(card)}
+        onDeleteImage={setImageDeleteCandidate}
+        onOpenViewbox={(index) => {
+          // Fullscreen synchron innerhalb der Klick-Geste anfordern (User
+          // Activation); der Viewer selbst mountet erst nach dem Render.
+          void enterFullscreen()
+          setViewbox({ cardId: card.id, index })
+        }}
+        dragging={dragId === card.id}
+        onDragStart={() => setDragId(card.id)}
+        onDragEnd={() => setDragId(null)}
+        onDropOn={() => handleDrop(card.id)}
+        onCollapse={panel ? () => setExpandedId(null) : undefined}
+      />
+    ) : (
+      <TextCard
+        key={card.id}
+        card={card}
+        mutations={mutations}
+        readOnly={readOnly}
+        onDelete={() => setDeleteCandidate(card)}
+        dragging={dragId === card.id}
+        onDragStart={() => setDragId(card.id)}
+        onDragEnd={() => setDragId(null)}
+        onDropOn={() => handleDrop(card.id)}
+        onCollapse={panel ? () => setExpandedId(null) : undefined}
+      />
+    )
+
+  if (panel) {
+    const expanded = expandedId !== null && cards?.some((c) => c.id === expandedId)
+    return (
+      <div
+        className={`flex h-full flex-col transition-[width] duration-200 ease-out ${
+          expanded ? 'w-[min(52rem,calc(100vw-22rem))]' : 'w-72'
+        }`}
+      >
+        {/* Kopf: rechtsbündig, immer in Spaltenbreite */}
+        <div className="ml-auto flex w-72 items-center justify-between gap-2 pb-2">
+          <span className="rounded-full bg-white/90 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500 shadow-sm backdrop-blur">
+            Book
+          </span>
+          {!readOnly && (
+            <div className="flex gap-1">
+              <button
+                className="rounded-lg border border-gray-200 bg-white/95 px-2.5 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+                disabled={mutations.createCard.isPending}
+                onClick={() =>
+                  mutations.createCard.mutate('text', {
+                    onSuccess: (c) => setExpandedId(c.id),
+                  })
+                }
+              >
+                + Text
+              </button>
+              <button
+                className="rounded-lg border border-gray-200 bg-white/95 px-2.5 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+                disabled={mutations.createCard.isPending}
+                onClick={() =>
+                  mutations.createCard.mutate('images', {
+                    onSuccess: (c) => setExpandedId(c.id),
+                  })
+                }
+              >
+                + Bilder
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
+          {isLoading && (
+            <p className="ml-auto w-72 rounded-xl bg-white/90 p-3 text-xs text-gray-500">
+              Lade Kacheln …
+            </p>
+          )}
+          {cards && cards.length === 0 && (
+            <p className="ml-auto w-72 rounded-xl bg-white/90 p-3 text-xs text-gray-500 shadow-sm">
+              {readOnly ? 'Noch keine Kacheln.' : 'Noch keine Kacheln – «+ Text» oder «+ Bilder».'}
+            </p>
+          )}
+          <div className="flex flex-col gap-2 pb-1">
+            {cards?.map((card) =>
+              card.id === expandedId ? (
+                <div key={card.id} className="w-full">
+                  {renderFullCard(card)}
+                </div>
+              ) : (
+                <CompactTile
+                  key={card.id}
+                  card={card}
+                  images={imagesByCard.get(card.id) ?? []}
+                  onExpand={() => setExpandedId(card.id)}
+                />
+              )
+            )}
+          </div>
+        </div>
+
+        {overlays}
+      </div>
+    )
+  }
 
   return (
     <div className="h-full overflow-y-auto bg-gray-100 p-4 md:p-6">
@@ -140,78 +314,91 @@ export function BookView({
       )}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        {cards?.map((card) =>
-          card.kind === 'images' ? (
-            <ImagesCard
-              key={card.id}
-              card={card}
-              images={imagesByCard.get(card.id) ?? []}
-              mutations={mutations}
-              readOnly={readOnly}
-              onDelete={() => setDeleteCandidate(card)}
-              onDeleteImage={setImageDeleteCandidate}
-              onOpenViewbox={(index) => {
-                // Fullscreen synchron innerhalb der Klick-Geste anfordern (User
-                // Activation); der Viewer selbst mountet erst nach dem Render.
-                void enterFullscreen()
-                setViewbox({ cardId: card.id, index })
-              }}
-              dragging={dragId === card.id}
-              onDragStart={() => setDragId(card.id)}
-              onDragEnd={() => setDragId(null)}
-              onDropOn={() => handleDrop(card.id)}
-            />
-          ) : (
-            <TextCard
-              key={card.id}
-              card={card}
-              mutations={mutations}
-              readOnly={readOnly}
-              onDelete={() => setDeleteCandidate(card)}
-              dragging={dragId === card.id}
-              onDragStart={() => setDragId(card.id)}
-              onDragEnd={() => setDragId(null)}
-              onDropOn={() => handleDrop(card.id)}
-            />
-          )
-        )}
+        {cards?.map((card) => renderFullCard(card))}
       </div>
 
-      {deleteCandidate && (
-        <ConfirmDialog
-          title="Kachel löschen?"
-          message={`«${deleteCandidate.title || 'Ohne Titel'}» wird ${
-            deleteCandidate.kind === 'images' ? 'samt Bildern ' : ''
-          }gelöscht.`}
-          onConfirm={() => {
-            mutations.deleteCard.mutate(deleteCandidate.id)
-            setDeleteCandidate(null)
-          }}
-          onCancel={() => setDeleteCandidate(null)}
-        />
-      )}
-
-      {imageDeleteCandidate && (
-        <ConfirmDialog
-          title="Bild entfernen?"
-          message="Das Bild wird aus der Kachel entfernt und die Ableitungen gelöscht."
-          onConfirm={() => {
-            mutations.deleteImage.mutate(imageDeleteCandidate)
-            setImageDeleteCandidate(null)
-          }}
-          onCancel={() => setImageDeleteCandidate(null)}
-        />
-      )}
-
-      {viewbox && viewboxImages.length > 0 && (
-        <Viewbox
-          images={viewboxImages}
-          index={Math.min(viewbox.index, viewboxImages.length - 1)}
-          onNavigate={(index) => setViewbox({ ...viewbox, index })}
-          onClose={() => setViewbox(null)}
-        />
-      )}
+      {overlays}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Kompakt-Kachel (Panel auf der Karte): Vorschau, Klick klappt nach links auf
+// ---------------------------------------------------------------------------
+
+function CompactTile({
+  card,
+  images,
+  onExpand,
+}: {
+  card: Card
+  images: Image[]
+  onExpand: () => void
+}) {
+  const preview = images.slice(0, 4)
+  const urls = useImageUrls(preview)
+  const more = images.length - preview.length
+  const snippet = card.body_md ? plainSnippet(card.body_md) : ''
+
+  return (
+    <button
+      id={`card-${card.id}`}
+      className="group ml-auto block w-72 rounded-xl border border-white/60 bg-white/95 p-3 text-left shadow-md backdrop-blur-md transition hover:-translate-x-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      title="Aufklappen"
+      onClick={onExpand}
+    >
+      <div className="flex items-start gap-2">
+        <svg
+          className="mt-0.5 h-4 w-4 shrink-0 text-gray-300 transition group-hover:text-blue-600"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m15 6-6 6 6 6" />
+        </svg>
+        <div className="min-w-0 flex-1">
+          {card.taken_at && (
+            <div className="text-[11px] text-gray-400">{card.taken_at.slice(0, 10)}</div>
+          )}
+          <div className="line-clamp-2 text-sm font-semibold leading-snug text-gray-900">
+            {card.title || (card.kind === 'images' ? 'Bilder' : 'Ohne Titel')}
+          </div>
+          {card.kind === 'images' ? (
+            images.length === 0 ? (
+              <div className="mt-1.5 text-xs text-gray-400">Noch keine Bilder</div>
+            ) : (
+              <div className="mt-2 grid grid-cols-4 gap-1">
+                {preview.map((img, i) => {
+                  const u = urls[img.id]
+                  const last = i === preview.length - 1 && more > 0
+                  return (
+                    <div
+                      key={img.id}
+                      className="relative aspect-square overflow-hidden rounded-md bg-gray-100"
+                    >
+                      {u && <img src={u.thumb} className="h-full w-full object-cover" alt="" />}
+                      {last && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs font-semibold text-white">
+                          +{more}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          ) : (
+            snippet && (
+              <div className="mt-1 line-clamp-3 text-xs leading-snug text-gray-500">{snippet}</div>
+            )
+          )}
+        </div>
+      </div>
+    </button>
   )
 }
 
@@ -226,9 +413,19 @@ interface HeaderProps {
   onDelete: () => void
   onDragStart: () => void
   onDragEnd: () => void
+  /** Panel auf der Karte: Kachel wieder nach rechts einklappen. */
+  onCollapse?: () => void
 }
 
-function CardHeader({ card, readOnly, mutations, onDelete, onDragStart, onDragEnd }: HeaderProps) {
+function CardHeader({
+  card,
+  readOnly,
+  mutations,
+  onDelete,
+  onDragStart,
+  onDragEnd,
+  onCollapse,
+}: HeaderProps) {
   return (
     <div
       className={`flex items-center gap-2 px-4 pt-3 ${readOnly ? '' : 'cursor-grab'}`}
@@ -244,6 +441,30 @@ function CardHeader({ card, readOnly, mutations, onDelete, onDragStart, onDragEn
       onDragEnd={readOnly ? undefined : onDragEnd}
       title={readOnly ? undefined : 'Ziehen zum Umsortieren'}
     >
+      {onCollapse && (
+        <button
+          className="-ml-1.5 flex h-6 w-6 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+          title="Einklappen"
+          aria-label="Kachel einklappen"
+          onClick={(e) => {
+            e.stopPropagation()
+            onCollapse()
+          }}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="m9 6 6 6-6 6" />
+          </svg>
+        </button>
+      )}
       {!readOnly && <span className="text-gray-300">⠿</span>}
       <span className="flex-1" />
       {readOnly ? (
@@ -288,6 +509,7 @@ interface TextCardProps {
   onDragStart: () => void
   onDragEnd: () => void
   onDropOn: () => void
+  onCollapse?: () => void
 }
 
 function TextCard({
@@ -299,6 +521,7 @@ function TextCard({
   onDragStart,
   onDragEnd,
   onDropOn,
+  onCollapse,
 }: TextCardProps) {
   const [editingBody, setEditingBody] = useState(false)
   const [bodyDraft, setBodyDraft] = useState(card.body_md ?? '')
@@ -333,6 +556,7 @@ function TextCard({
         onDelete={onDelete}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
+        onCollapse={onCollapse}
       />
 
       <div className="flex-1 px-6 pb-6 pt-2 md:px-8">
@@ -417,6 +641,7 @@ interface ImagesCardProps {
   onDragStart: () => void
   onDragEnd: () => void
   onDropOn: () => void
+  onCollapse?: () => void
 }
 
 function ImagesCard({
@@ -431,6 +656,7 @@ function ImagesCard({
   onDragStart,
   onDragEnd,
   onDropOn,
+  onCollapse,
 }: ImagesCardProps) {
   const [activeIdx, setActiveIdx] = useState(0)
   const [dragOver, setDragOver] = useState(false)
@@ -480,6 +706,7 @@ function ImagesCard({
         onDelete={onDelete}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
+        onCollapse={onCollapse}
       />
 
       <div className="flex-1 px-4 pb-4 pt-2">

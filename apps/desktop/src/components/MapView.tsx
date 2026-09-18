@@ -550,7 +550,7 @@ export function MapView({
         <MapSearch onPick={handleSearchPick} />
       </div>
 
-      <div className="absolute right-2 top-2 z-10 flex flex-col items-end gap-2">
+      <div className="absolute right-2 top-2 z-20 flex flex-col items-end gap-2">
         <div className="flex gap-1">
           <button
             className="rounded-lg border border-gray-200 bg-white/95 px-2.5 py-1.5 text-sm shadow-md hover:bg-gray-50"
