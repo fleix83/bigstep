@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import type { Card, Image } from '@tourenbuch/shared'
@@ -19,7 +19,15 @@ interface Props {
 }
 
 function renderMarkdown(md: string): string {
-  return DOMPurify.sanitize(marked.parse(md, { async: false, gfm: true }))
+  // breaks: einfacher Zeilenumbruch im Editor = <br> in der Anzeige.
+  return DOMPurify.sanitize(marked.parse(md, { async: false, gfm: true, breaks: true }))
+}
+
+/** Textarea an ihren Inhalt anpassen (Titel umbricht statt abzuschneiden). */
+function autoGrow(el: HTMLTextAreaElement | null) {
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
 }
 
 /** Display-/Thumb-URLs für eine Bildliste auflösen (lokal oder aus R2). */
@@ -142,7 +150,12 @@ export function BookView({
               readOnly={readOnly}
               onDelete={() => setDeleteCandidate(card)}
               onDeleteImage={setImageDeleteCandidate}
-              onOpenViewbox={(index) => setViewbox({ cardId: card.id, index })}
+              onOpenViewbox={(index) => {
+                // Fullscreen synchron innerhalb der Klick-Geste anfordern (User
+                // Activation); der Viewer selbst mountet erst nach dem Render.
+                void enterFullscreen()
+                setViewbox({ cardId: card.id, index })
+              }}
               dragging={dragId === card.id}
               onDragStart={() => setDragId(card.id)}
               onDragEnd={() => setDragId(null)}
@@ -234,9 +247,7 @@ function CardHeader({ card, readOnly, mutations, onDelete, onDragStart, onDragEn
       {!readOnly && <span className="text-gray-300">⠿</span>}
       <span className="flex-1" />
       {readOnly ? (
-        card.taken_at && (
-          <span className="text-xs text-gray-400">{card.taken_at.slice(0, 10)}</span>
-        )
+        card.taken_at && <span className="text-xs text-gray-400">{card.taken_at.slice(0, 10)}</span>
       ) : (
         <input
           type="date"
@@ -326,16 +337,26 @@ function TextCard({
 
       <div className="flex-1 px-6 pb-6 pt-2 md:px-8">
         {readOnly ? (
-          <h3 className="mb-4 text-2xl font-semibold text-gray-900 md:text-3xl">
+          <h3 className="mb-4 break-words text-2xl font-semibold leading-tight text-gray-900 md:text-3xl">
             {card.title || 'Ohne Titel'}
           </h3>
         ) : (
-          <input
-            className="mb-4 w-full bg-transparent text-2xl font-semibold text-gray-900 outline-none placeholder:text-gray-300 md:text-3xl"
+          <textarea
+            className="mb-4 block w-full resize-none overflow-hidden bg-transparent text-2xl font-semibold leading-tight text-gray-900 outline-none placeholder:text-gray-300 md:text-3xl"
             placeholder="Überschrift …"
+            rows={1}
             defaultValue={card.title ?? ''}
+            ref={autoGrow}
+            onInput={(e) => autoGrow(e.currentTarget)}
+            onKeyDown={(e) => {
+              // Enter = fertig (kein Zeilenumbruch im Titel)
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                e.currentTarget.blur()
+              }
+            }}
             onBlur={(e) => {
-              const v = e.target.value.trim()
+              const v = e.target.value.replace(/\s+/g, ' ').trim()
               if (v !== (card.title ?? '')) {
                 mutations.updateCard.mutate({ id: card.id, data: { title: v || null } })
               }
@@ -354,7 +375,7 @@ function TextCard({
           />
         ) : (
           <div
-            className={`prose max-w-none text-gray-800 [&_a]:text-blue-600 [&_li]:my-0.5 [&_ul]:list-disc [&_ul]:pl-5 ${
+            className={`max-w-none whitespace-normal break-words text-gray-800 [overflow-wrap:anywhere] [&_a]:text-blue-600 [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-gray-200 [&_blockquote]:pl-4 [&_blockquote]:text-gray-500 [&_code]:rounded [&_code]:bg-gray-100 [&_code]:px-1 [&_h1]:mt-4 [&_h1]:mb-2 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:mt-4 [&_h2]:mb-2 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_h3]:font-semibold [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2 [&_p]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-gray-100 [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2 ${
               readOnly ? '' : 'cursor-text'
             }`}
             title={readOnly ? undefined : 'Klicken zum Bearbeiten'}
@@ -578,8 +599,59 @@ function ImagesCard({
 }
 
 // ---------------------------------------------------------------------------
-// Viewbox: grosses Bild mit Vor/Zurück, Untertitel und Zähler
+// Viewbox: Vollbild-Bildbetrachter
+//
+// - Nutzt die Fullscreen-API (deckt auch die Browser-Chrome ab, bis an den
+//   Bildschirmrand). Fallback ohne Fullscreen-API (z. B. iPhone-Safari):
+//   fixed-Overlay über den ganzen Viewport, Safe-Area-Insets berücksichtigt.
+// - Esc/Browser-«Vollbild verlassen» schliesst den Viewer (Esc wird im
+//   Fullscreen vom Browser konsumiert → wir reagieren auf fullscreenchange).
+// - Pfeiltasten/Swipe blättern, Swipe nach unten schliesst, Klick aufs Bild
+//   blendet die Bedienelemente ein/aus, Klick auf den schwarzen Rand schliesst.
+// - Nachbarbilder werden vorgeladen, Bildwechsel blendet weich über,
+//   Bedienelemente und Cursor verschwinden bei Inaktivität.
 // ---------------------------------------------------------------------------
+
+type FsElement = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void }
+type FsDocument = Document & {
+  webkitFullscreenElement?: Element | null
+  webkitExitFullscreen?: () => Promise<void> | void
+}
+
+function fullscreenElement(): Element | null {
+  const d = document as FsDocument
+  return d.fullscreenElement ?? d.webkitFullscreenElement ?? null
+}
+
+function fullscreenSupported(): boolean {
+  const el = document.documentElement as FsElement
+  return Boolean(el.requestFullscreen || el.webkitRequestFullscreen)
+}
+
+/** Vollbild fürs ganze Dokument anfordern (der Viewer liegt als Overlay darüber). */
+async function enterFullscreen(): Promise<void> {
+  if (fullscreenElement()) return
+  const e = document.documentElement as FsElement
+  try {
+    if (e.requestFullscreen) await e.requestFullscreen({ navigationUI: 'hide' })
+    else if (e.webkitRequestFullscreen) await e.webkitRequestFullscreen()
+  } catch {
+    // z. B. ohne User-Gesture oder in eingebetteten Kontexten – Fallback-Overlay reicht.
+  }
+}
+
+async function exitFullscreen(): Promise<void> {
+  const d = document as FsDocument
+  try {
+    if (d.fullscreenElement && d.exitFullscreen) await d.exitFullscreen()
+    else if (d.webkitFullscreenElement && d.webkitExitFullscreen) await d.webkitExitFullscreen()
+  } catch {
+    // ignorieren
+  }
+}
+
+const CONTROLS_IDLE_MS = 2500
+const SWIPE_MIN_PX = 48
 
 function Viewbox({
   images,
@@ -596,6 +668,13 @@ function Viewbox({
   const img = images[index]
   const u = img ? urls[img.id] : null
 
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [controlsVisible, setControlsVisible] = useState(true)
+  const [loaded, setLoaded] = useState(false)
+  const idleTimer = useRef<number | null>(null)
+  const touchStart = useRef<{ x: number; y: number; t: number } | null>(null)
+  const canFullscreen = fullscreenSupported()
+
   const prev = useCallback(
     () => onNavigate((index - 1 + images.length) % images.length),
     [index, images.length, onNavigate]
@@ -605,76 +684,314 @@ function Viewbox({
     [index, images.length, onNavigate]
   )
 
+  // Bedienelemente einblenden und Idle-Timer neu starten.
+  const wake = useCallback(() => {
+    setControlsVisible(true)
+    if (idleTimer.current) window.clearTimeout(idleTimer.current)
+    idleTimer.current = window.setTimeout(() => setControlsVisible(false), CONTROLS_IDLE_MS)
+  }, [])
+
+  // Öffnen/Schliessen: Idle-Timer starten; beim Schliessen Vollbild verlassen.
+  useEffect(() => {
+    wake()
+    return () => {
+      if (idleTimer.current) window.clearTimeout(idleTimer.current)
+      if (fullscreenElement()) void exitFullscreen()
+    }
+    // nur beim Mount/Unmount
+  }, [])
+
+  // Fullscreen-Status verfolgen; verlässt der Browser das Vollbild (Esc,
+  // System-UI), schliesst der Viewer.
+  useEffect(() => {
+    let wasFullscreen = fullscreenElement() !== null
+    const onChange = () => {
+      const active = fullscreenElement() !== null
+      setIsFullscreen(active)
+      if (wasFullscreen && !active) onClose()
+      wasFullscreen = active
+    }
+    document.addEventListener('fullscreenchange', onChange)
+    document.addEventListener('webkitfullscreenchange', onChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange)
+      document.removeEventListener('webkitfullscreenchange', onChange)
+    }
+  }, [onClose])
+
+  // Tastatur
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-      else if (e.key === 'ArrowLeft') prev()
-      else if (e.key === 'ArrowRight') next()
+      switch (e.key) {
+        case 'Escape':
+          onClose()
+          break
+        case 'ArrowLeft':
+          prev()
+          wake()
+          break
+        case 'ArrowRight':
+        case ' ':
+          e.preventDefault()
+          next()
+          wake()
+          break
+        case 'Home':
+          onNavigate(0)
+          wake()
+          break
+        case 'End':
+          onNavigate(images.length - 1)
+          wake()
+          break
+        case 'f':
+        case 'F':
+          if (!canFullscreen) break
+          if (fullscreenElement()) void exitFullscreen()
+          else void enterFullscreen()
+          break
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, prev, next])
+  }, [onClose, prev, next, onNavigate, images.length, wake, canFullscreen])
 
-  // Vollbild-Viewer: das Bild füllt den ganzen Viewport (object-contain),
-  // Bedienelemente liegen als Overlays darüber. Klick aufs Bild schliesst.
+  // Bildwechsel: Ladezustand zurücksetzen (für die Überblendung).
+  useEffect(() => {
+    setLoaded(false)
+  }, [img?.id])
+
+  // Nachbarbilder vorladen, damit das Blättern ohne Wartezeit läuft.
+  useEffect(() => {
+    if (images.length < 2) return
+    const neighbours = [
+      images[(index + 1) % images.length],
+      images[(index - 1 + images.length) % images.length],
+    ]
+    for (const n of neighbours) {
+      const nu = n ? urls[n.id] : null
+      if (nu) {
+        const pre = new window.Image()
+        pre.src = nu.display
+      }
+    }
+  }, [index, images, urls])
+
+  // Touch: horizontal blättern, vertikal nach unten schliessen.
+  const onTouchStart = (e: ReactTouchEvent) => {
+    const t = e.touches[0]
+    if (!t || e.touches.length !== 1) {
+      touchStart.current = null
+      return
+    }
+    touchStart.current = { x: t.clientX, y: t.clientY, t: Date.now() }
+  }
+  const onTouchEnd = (e: ReactTouchEvent) => {
+    const start = touchStart.current
+    touchStart.current = null
+    const t = e.changedTouches[0]
+    if (!start || !t) return
+    const dx = t.clientX - start.x
+    const dy = t.clientY - start.y
+    const fast = Date.now() - start.t < 600
+    if (Math.abs(dx) > SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0) next()
+      else prev()
+      wake()
+    } else if (dy > SWIPE_MIN_PX * 1.5 && Math.abs(dy) > Math.abs(dx) * 1.5 && fast) {
+      onClose()
+    }
+  }
+
+  const controlCls = `transition-opacity duration-300 ${
+    controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
+  }`
+  const btnCls =
+    'flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md transition hover:bg-white/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 active:scale-95'
+
   return (
-    <div className="fixed inset-0 z-40 bg-black" onClick={onClose}>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={img?.caption || 'Bildbetrachter'}
+      className={`fixed inset-0 z-50 flex h-dvh w-screen touch-none select-none items-center justify-center overscroll-none bg-black ${
+        controlsVisible ? '' : 'cursor-none'
+      }`}
+      onMouseMove={wake}
+      onTouchStart={(e) => {
+        onTouchStart(e)
+        wake()
+      }}
+      onTouchEnd={onTouchEnd}
+      onClick={onClose}
+    >
       {u ? (
         <img
+          key={img?.id}
           src={u.display}
-          className="absolute inset-0 h-full w-full object-contain"
+          draggable={false}
+          onLoad={() => setLoaded(true)}
+          onClick={(e) => {
+            e.stopPropagation()
+            setControlsVisible((v) => {
+              if (v) {
+                if (idleTimer.current) window.clearTimeout(idleTimer.current)
+                return false
+              }
+              wake()
+              return true
+            })
+          }}
+          className={`max-h-full max-w-full object-contain transition-opacity duration-300 ease-out ${
+            loaded ? 'opacity-100' : 'opacity-0'
+          }`}
           alt={img?.caption ?? ''}
         />
       ) : (
-        <div className="flex h-full items-center justify-center text-sm text-gray-400">
+        <div className="text-sm text-gray-400">
           {u === null ? 'Bild nicht verfügbar' : 'lädt …'}
         </div>
       )}
 
+      {u && !loaded && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white/80" />
+        </div>
+      )}
+
+      {/* Kopfzeile: Zähler links, Vollbild + Schliessen rechts (Safe-Area-bewusst) */}
+      <div
+        className={`absolute inset-x-0 top-0 z-10 flex items-start justify-between bg-gradient-to-b from-black/60 to-transparent px-3 pb-8 pt-[max(0.75rem,env(safe-area-inset-top))] ${controlCls}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="pl-[env(safe-area-inset-left)] pt-2.5 text-sm tabular-nums text-white/70">
+          {images.length > 1 && (
+            <span>
+              {index + 1} / {images.length}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2 pr-[env(safe-area-inset-right)]">
+          {canFullscreen && (
+            <button
+              className={btnCls}
+              title={isFullscreen ? 'Vollbild verlassen (F)' : 'Vollbild (F)'}
+              aria-label={isFullscreen ? 'Vollbild verlassen' : 'Vollbild'}
+              onClick={() => {
+                if (isFullscreen) void exitFullscreen()
+                else void enterFullscreen()
+              }}
+            >
+              {isFullscreen ? (
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" />
+                </svg>
+              ) : (
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />
+                </svg>
+              )}
+            </button>
+          )}
+          <button
+            className={btnCls}
+            title="Schliessen (Esc)"
+            aria-label="Schliessen"
+            onClick={onClose}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
       {images.length > 1 && (
         <>
           <button
-            className="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/10 px-4 py-2.5 text-3xl text-white hover:bg-white/25 md:left-4"
-            title="Vorheriges Bild"
+            className={`${btnCls} absolute top-1/2 z-10 -translate-y-1/2 left-[max(0.5rem,env(safe-area-inset-left))] md:left-4 md:h-12 md:w-12 ${controlCls}`}
+            title="Vorheriges Bild (←)"
+            aria-label="Vorheriges Bild"
             onClick={(e) => {
               e.stopPropagation()
               prev()
+              wake()
             }}
           >
-            ‹
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m15 18-6-6 6-6" />
+            </svg>
           </button>
           <button
-            className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/10 px-4 py-2.5 text-3xl text-white hover:bg-white/25 md:right-4"
-            title="Nächstes Bild"
+            className={`${btnCls} absolute top-1/2 z-10 -translate-y-1/2 right-[max(0.5rem,env(safe-area-inset-right))] md:right-4 md:h-12 md:w-12 ${controlCls}`}
+            title="Nächstes Bild (→)"
+            aria-label="Nächstes Bild"
             onClick={(e) => {
               e.stopPropagation()
               next()
+              wake()
             }}
           >
-            ›
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m9 18 6-6-6-6" />
+            </svg>
           </button>
         </>
       )}
 
-      <button
-        className="absolute right-3 top-3 z-10 rounded-full bg-white/10 px-3 py-1.5 text-lg text-white hover:bg-white/25"
-        title="Schliessen"
-        onClick={onClose}
-      >
-        ✕
-      </button>
-
-      {(img?.caption || images.length > 1) && (
+      {img?.caption && (
         <div
-          className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/75 to-transparent px-6 pb-4 pt-12 text-center text-gray-100"
+          className={`absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/70 to-transparent px-[max(1.5rem,env(safe-area-inset-left))] pb-[max(1rem,env(safe-area-inset-bottom))] pt-12 text-center ${controlCls}`}
           onClick={(e) => e.stopPropagation()}
         >
-          {img?.caption && <p className="italic">{img.caption}</p>}
-          {images.length > 1 && (
-            <p className="mt-1 text-xs text-gray-400">
-              {index + 1} / {images.length}
-            </p>
-          )}
+          <p className="mx-auto max-w-3xl text-base text-gray-100 [text-shadow:0_1px_2px_rgba(0,0,0,.6)] md:text-lg">
+            {img.caption}
+          </p>
         </div>
       )}
     </div>

@@ -1,5 +1,12 @@
 # Changelog
 
+## Book: Text-Umbruch + Vollbild-Viewer (2026-09-18)
+
+- **Text-Kachel bricht um:** Der Titel ist jetzt eine automatisch wachsende Textarea statt eines einzeiligen Inputs (lange Überschriften wurden abgeschnitten; Enter = fertig). Markdown-Text respektiert einfache Zeilenumbrüche (`breaks: true`), Absätze/Listen/Überschriften haben Abstände (das `prose`-Utility war wirkungslos, kein Typography-Plugin), lange Wörter/URLs brechen (`overflow-wrap: anywhere`).
+- **Viewbox als echter Vollbild-Viewer:** Öffnen fordert per Fullscreen-API (synchron in der Klick-Geste) das Vollbild an — deckt auch die Browser-Leiste ab, bis an den Bildschirmrand. Verlässt der Browser das Vollbild (Esc/System-UI), schliesst der Viewer. Ohne Fullscreen-API (iPhone-Safari) bleibt das Overlay über den ganzen Viewport (`100dvh`, Safe-Area-Insets, `viewport-fit=cover`).
+- Bedienung: Pfeiltasten/Leertaste/Home/End, `F` für Vollbild an/aus, Swipe links/rechts blättert, Swipe nach unten schliesst, Tipp aufs Bild blendet die Bedienelemente ein/aus, Klick auf den schwarzen Rand schliesst. Bedienelemente und Cursor verschwinden nach 2.5 s Inaktivität; Nachbarbilder werden vorgeladen, Bildwechsel blendet weich über, Spinner beim Laden; SVG-Icons, 44-px-Tap-Ziele, Backdrop-Blur, `role="dialog"` + aria-labels.
+- Verifiziert auf Produktion (Chrome): Titel-Umbruch, Öffnen, Blättern per Tastatur, Auto-Hide, Esc. Die Fullscreen-API selbst lässt sich in der Automations-Umgebung nicht prüfen (Chrome lehnt `requestFullscreen` in verdeckten Tabs ab) — manuell testen.
+
 ## Bildqualität erhöht (2026-09-18)
 
 - **Display-Ableitung 2560 px statt 2000 px** (längste Kante) und **Encoder-Qualität 0.9** (WebP; JPEG-Fallback auf WKWebView ebenfalls 0.9, vorher 0.82/0.85) in `apps/desktop/src/lib/image-pipeline.ts`. Sichtbar vor allem im Vollbild-Viewer auf Retina-/4K-Bildschirmen (kein Hochskalieren mehr bis 2560 px) sowie bei feinen Texturen und Himmelsverläufen. Display-Dateien werden ca. doppelt so gross (~0.5–1 MB); 2000 Bilder bleiben deutlich unter dem R2-Free-Tier. Gilt nur für neu importierte Bilder — bestehende Ableitungen sind content-addressed und werden nicht neu erzeugt.
