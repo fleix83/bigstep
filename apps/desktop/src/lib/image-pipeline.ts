@@ -91,6 +91,28 @@ async function encodeScaled(
   throw new Error('Bild-Encoding fehlgeschlagen (Canvas/Speicher)')
 }
 
+function isPlausibleCoord(v: unknown, max: number): v is number {
+  return typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= max
+}
+
+/**
+ * GPS-Rohtag ([Grad, Minuten, Sekunden] oder bereits Dezimal) + Ref ('N'/'S'/'E'/'W')
+ * → Dezimalgrad; undefined, wenn nichts Verwertbares drin ist.
+ */
+function dmsToDecimal(raw: unknown, ref: unknown): number | undefined {
+  let value: number | undefined
+  if (typeof raw === 'number') value = raw
+  else if (Array.isArray(raw)) {
+    const parts = raw.map((p) => (typeof p === 'number' ? p : Number(p)))
+    if (parts.length === 0 || parts.some((p) => !Number.isFinite(p))) return undefined
+    const [d = 0, m = 0, s = 0] = parts
+    value = d + m / 60 + s / 3600
+  }
+  if (value === undefined || !Number.isFinite(value)) return undefined
+  const r = typeof ref === 'string' ? ref.trim().toUpperCase() : ''
+  return r === 'S' || r === 'W' ? -Math.abs(value) : value
+}
+
 /** Verarbeitet ein Originalbild zu sha256 + EXIF-Metadaten + Ableitungen. */
 export async function processImageFile(file: File): Promise<ProcessedImage> {
   const originalBuf = await file.arrayBuffer()
@@ -105,25 +127,36 @@ export async function processImageFile(file: File): Promise<ProcessedImage> {
     // Kein `pick`: das würde auch die GPS-Tags wegfiltern, die `gps: true`
     // eigentlich liefern soll.
     const exif = (await exifr.parse(file, { gps: true })) as
-      | { latitude?: number; longitude?: number; DateTimeOriginal?: Date; CreateDate?: Date }
+      | {
+          latitude?: number
+          longitude?: number
+          GPSLatitude?: unknown
+          GPSLatitudeRef?: unknown
+          GPSLongitude?: unknown
+          GPSLongitudeRef?: unknown
+          DateTimeOriginal?: Date
+          CreateDate?: Date
+        }
       | undefined
     if (exif) {
-      // Nur endliche, plausible Koordinaten übernehmen: exifr liefert bei
-      // defekten GPS-Tags (z. B. 0/0-Rationals mancher Android-Kameras) NaN,
-      // und NaN wird in JSON zu null → API lehnte den Import ab.
-      const la = exif.latitude
-      const lo = exif.longitude
-      if (
-        typeof la === 'number' &&
-        typeof lo === 'number' &&
-        Number.isFinite(la) &&
-        Number.isFinite(lo) &&
-        Math.abs(la) <= 90 &&
-        Math.abs(lo) <= 180 &&
-        !(la === 0 && lo === 0)
-      ) {
-        lat = la
-        lon = lo
+      // 1) exifr-berechnete Dezimalkoordinaten; 2) Fallback aus den rohen
+      // Grad/Minuten/Sekunden-Tags (exifr liefert bei teilweise defekten Tags NaN).
+      let la = exif.latitude
+      let lo = exif.longitude
+      if (!isPlausibleCoord(la, 90) || !isPlausibleCoord(lo, 180)) {
+        la = dmsToDecimal(exif.GPSLatitude, exif.GPSLatitudeRef)
+        lo = dmsToDecimal(exif.GPSLongitude, exif.GPSLongitudeRef)
+      }
+      if (isPlausibleCoord(la, 90) && isPlausibleCoord(lo, 180) && !(la === 0 && lo === 0)) {
+        lat = la!
+        lon = lo!
+      } else if (exif.GPSLatitude !== undefined || exif.latitude !== undefined) {
+        console.warn('[image-pipeline] GPS-Tags vorhanden, aber nicht verwertbar:', {
+          latitude: exif.latitude,
+          longitude: exif.longitude,
+          GPSLatitude: exif.GPSLatitude,
+          GPSLongitude: exif.GPSLongitude,
+        })
       }
       const dt = exif.DateTimeOriginal ?? exif.CreateDate
       if (dt instanceof Date && !Number.isNaN(dt.getTime())) taken_at = dt.toISOString()

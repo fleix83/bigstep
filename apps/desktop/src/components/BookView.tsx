@@ -57,7 +57,10 @@ function autoGrow(el: HTMLTextAreaElement | null) {
 function useImageUrls(images: Image[]) {
   const api = useApi()
   const [urls, setUrls] = useState<Record<string, DerivativeUrls | null>>({})
-  const key = images.map((i) => i.id).join(',')
+  // Schlüssel enthält den Upload-Zustand: Ein Bild, das beim ersten Auflösen noch
+  // «pending» war (Import auf einem anderen Gerät), wird nach dem R2-Upload neu
+  // aufgelöst statt dauerhaft «nicht synchron» zu bleiben.
+  const key = images.map((i) => `${i.id}:${i.upload_state}:${i.r2_key_thumb ?? ''}`).join(',')
   useEffect(() => {
     let alive = true
     void Promise.all(
