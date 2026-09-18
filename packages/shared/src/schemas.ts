@@ -134,9 +134,10 @@ export const imageSchema = z.object({
 export const imageCreateSchema = z.object({
   card_id: z.uuid(),
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
-  lat: z.number().min(-90).max(90).optional(),
-  lon: z.number().min(-180).max(180).optional(),
-  taken_at: z.iso.datetime({ offset: true }).optional(),
+  // nullish: Clients ohne GPS dürfen null schicken (JSON macht aus NaN null).
+  lat: z.number().min(-90).max(90).nullish(),
+  lon: z.number().min(-180).max(180).nullish(),
+  taken_at: z.iso.datetime({ offset: true }).nullish(),
 })
 
 export const imageUpdateSchema = z

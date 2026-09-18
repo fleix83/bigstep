@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  imageCreateSchema,
   bboxSchema,
   cardsReorderSchema,
   lineStringSchema,
@@ -96,5 +97,23 @@ describe('Geometrie-Schemas', () => {
 describe('cardsReorderSchema', () => {
   it('verlangt mindestens eine id', () => {
     expect(() => cardsReorderSchema.parse({ tour_id: validTour.id, ids: [] })).toThrow()
+  })
+})
+
+describe('imageCreateSchema', () => {
+  const base = {
+    card_id: '4f1c2a2e-0f0a-4c9e-9b2e-3d5a6b7c8d9e',
+    sha256: 'a'.repeat(64),
+  }
+
+  it('akzeptiert Bilder ohne GPS – auch mit explizitem null (JSON aus NaN)', () => {
+    expect(imageCreateSchema.safeParse(base).success).toBe(true)
+    expect(imageCreateSchema.safeParse({ ...base, lat: null, lon: null }).success).toBe(true)
+    expect(imageCreateSchema.safeParse({ ...base, taken_at: null }).success).toBe(true)
+  })
+
+  it('weist Koordinaten ausserhalb des gültigen Bereichs ab', () => {
+    expect(imageCreateSchema.safeParse({ ...base, lat: 91, lon: 8 }).success).toBe(false)
+    expect(imageCreateSchema.safeParse({ ...base, lat: 46.9, lon: 181 }).success).toBe(false)
   })
 })

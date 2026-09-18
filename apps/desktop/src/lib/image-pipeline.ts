@@ -108,9 +108,22 @@ export async function processImageFile(file: File): Promise<ProcessedImage> {
       | { latitude?: number; longitude?: number; DateTimeOriginal?: Date; CreateDate?: Date }
       | undefined
     if (exif) {
-      if (typeof exif.latitude === 'number' && typeof exif.longitude === 'number') {
-        lat = exif.latitude
-        lon = exif.longitude
+      // Nur endliche, plausible Koordinaten übernehmen: exifr liefert bei
+      // defekten GPS-Tags (z. B. 0/0-Rationals mancher Android-Kameras) NaN,
+      // und NaN wird in JSON zu null → API lehnte den Import ab.
+      const la = exif.latitude
+      const lo = exif.longitude
+      if (
+        typeof la === 'number' &&
+        typeof lo === 'number' &&
+        Number.isFinite(la) &&
+        Number.isFinite(lo) &&
+        Math.abs(la) <= 90 &&
+        Math.abs(lo) <= 180 &&
+        !(la === 0 && lo === 0)
+      ) {
+        lat = la
+        lon = lo
       }
       const dt = exif.DateTimeOriginal ?? exif.CreateDate
       if (dt instanceof Date && !Number.isNaN(dt.getTime())) taken_at = dt.toISOString()

@@ -1,5 +1,11 @@
 # Changelog
 
+## Bugfix: Bild-Import auf Android (2026-09-18)
+
+- **Ursache:** exifr liefert bei defekten GPS-Tags (z. B. 0/0-Rationals mancher Android-Kameras) `NaN` für Breite/Länge; `typeof NaN === 'number'` liess das durch, JSON macht aus `NaN` `null`, und die API (`lat: z.number().optional()`) lehnte den Import ab — bisher still, seit dem Fehler-Banner sichtbar als «lat: expected number, received null».
+- **Fix Client:** nur endliche Koordinaten im gültigen Bereich (und nicht 0/0) werden übernommen. **Fix API:** `imageCreateSchema` akzeptiert `null` für lat/lon/taken_at (`nullish`), 2 neue Schema-Tests. Encoding-Fallback und Fehleranzeige aus dem vorherigen Eintrag bleiben.
+- Hinweis: Bilder, deren GPS-Tags so defekt sind, landen ohne Position (kein Foto-Pin) — korrekt getaggte Fotos bekommen weiterhin Pins.
+
 ## Foto-Pins ↔ Bild-Karussell (2026-09-18)
 
 - **Bild ↔ Position verknüpft (Desktop, Book-Modus):** Foto-Pins der Bilder mit GPS liegen auf der Route — GPS-Positionen bis 250 m neben der Route werden auf den nächsten Routenpunkt gesetzt (`nearestPointOnLine` in `@tourenbuch/shared`, 4 Unit-Tests), weiter entfernte bleiben an der Rohposition.
