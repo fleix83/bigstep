@@ -60,7 +60,11 @@ interface Props {
   editor?: RouteEditor | null
   /** Foto-Pins (Bilder mit GPS) der aktiven Tour. */
   photos?: PhotoPin[]
-  onPhotoClick?: (cardId: string) => void
+  onPhotoClick?: (cardId: string, imageId: string) => void
+  /** Hover über einem Foto-Pin (null = verlassen) – markiert das Bild im Book-Panel. */
+  onPhotoHover?: (imageId: string | null) => void
+  /** Bild, dessen Pin hervorgehoben wird (Hover/Klick im Book-Panel oder auf der Karte). */
+  highlightImageId?: string | null
   /** Karten-Vollbild (Shell blendet Topbar/Sidebar/Tabs aus). */
   fullscreen?: boolean
   onToggleFullscreen?: () => void
@@ -176,6 +180,8 @@ export function MapView({
   editor = null,
   photos = [],
   onPhotoClick,
+  onPhotoHover,
+  highlightImageId = null,
   fullscreen = false,
   hideControls = false,
   onToggleFullscreen,
@@ -400,42 +406,70 @@ export function MapView({
     }
   }, [editor, ready])
 
-  // Foto-Pins: Bilder mit GPS als Marker; Klick öffnet die zugehörige Card.
+  // Foto-Pins: Bilder mit GPS als Marker. Klick öffnet die zugehörige Kachel,
+  // Hover markiert das Bild im Book-Panel (und umgekehrt: highlightImageId).
+  // MapLibre positioniert das Marker-Element per transform – die Hervorhebung
+  // (scale/ring) läuft deshalb auf einer inneren Box.
   const photoMarkersRef = useRef<Marker[]>([])
+  const photoBoxesRef = useRef(new Map<string, { el: HTMLDivElement; box: HTMLDivElement }>())
   const onPhotoClickRef = useRef(onPhotoClick)
   onPhotoClickRef.current = onPhotoClick
+  const onPhotoHoverRef = useRef(onPhotoHover)
+  onPhotoHoverRef.current = onPhotoHover
   useEffect(() => {
     const map = mapRef.current
     for (const m of photoMarkersRef.current) m.remove()
     photoMarkersRef.current = []
+    photoBoxesRef.current.clear()
     if (!map || !ready || photos.length === 0) return
     for (const pin of photos) {
       const el = document.createElement('div')
-      el.style.cssText =
-        'width:30px;height:30px;border-radius:6px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45);cursor:pointer;overflow:hidden;background:#e5e7eb;display:flex;align-items:center;justify-content:center'
+      el.style.cssText = 'cursor:pointer'
+      const box = document.createElement('div')
+      box.style.cssText =
+        'width:30px;height:30px;border-radius:6px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45);overflow:hidden;background:#e5e7eb;display:flex;align-items:center;justify-content:center;transform-origin:50% 100%;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease'
       if (pin.thumbUrl) {
         const img = document.createElement('img')
         img.src = pin.thumbUrl
+        img.draggable = false
         img.style.cssText = 'width:100%;height:100%;object-fit:cover'
-        el.appendChild(img)
+        box.appendChild(img)
       } else {
-        el.textContent = '📷'
+        box.textContent = '📷'
       }
-      el.title = 'Card öffnen'
+      el.appendChild(box)
+      el.title = 'Bild im Book zeigen'
       el.addEventListener('click', (ev) => {
         ev.stopPropagation()
-        onPhotoClickRef.current?.(pin.cardId)
+        onPhotoClickRef.current?.(pin.cardId, pin.imageId)
       })
+      el.addEventListener('mouseenter', () => onPhotoHoverRef.current?.(pin.imageId))
+      el.addEventListener('mouseleave', () => onPhotoHoverRef.current?.(null))
       const marker = new Marker({ element: el, anchor: 'bottom' })
         .setLngLat([pin.lon, pin.lat])
         .addTo(map)
       photoMarkersRef.current.push(marker)
+      photoBoxesRef.current.set(pin.imageId, { el, box })
     }
     return () => {
       for (const m of photoMarkersRef.current) m.remove()
       photoMarkersRef.current = []
+      photoBoxesRef.current.clear()
     }
   }, [photos, ready])
+
+  // Hervorhebung des markierten Foto-Pins (grösser, blauer Ring, oben auf).
+  useEffect(() => {
+    for (const [id, { el, box }] of photoBoxesRef.current) {
+      const on = id === highlightImageId
+      box.style.transform = on ? 'scale(1.5)' : 'scale(1)'
+      box.style.borderColor = on ? '#2563eb' : '#fff'
+      box.style.boxShadow = on
+        ? '0 0 0 3px rgba(37,99,235,.45), 0 2px 8px rgba(0,0,0,.5)'
+        : '0 1px 4px rgba(0,0,0,.45)'
+      el.style.zIndex = on ? '5' : ''
+    }
+  }, [highlightImageId, photos, ready])
 
   // Ortssuche: Treffer anfliegen und mit einem Pin markieren.
   const searchMarkerRef = useRef<Marker | null>(null)

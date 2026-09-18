@@ -9,9 +9,40 @@ export function haversineM(a: [number, number], b: [number, number]): number {
   const dLon = (b[0] - a[0]) * toRad
   const lat1 = a[1] * toRad
   const lat2 = b[1] * toRad
-  const h =
-    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2
   return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(h))
+}
+
+/**
+ * Nächster Punkt einer Linie zu `pt` (Fusspunkt auf dem nächsten Segment) samt
+ * Distanz in Metern. Lokale äquirektanguläre Näherung – für Tour-Massstäbe
+ * (wenige km, GPS-Abweichungen von Metern) völlig ausreichend.
+ */
+export function nearestPointOnLine(line: LineString, pt: LonLat): { point: LonLat; distM: number } {
+  const c = line.coordinates
+  if (c.length === 0) return { point: pt, distM: Number.POSITIVE_INFINITY }
+  const kx = Math.cos((pt[1] * Math.PI) / 180)
+  const toXY = (p: number[]): [number, number] => [(p[0]! - pt[0]) * kx, p[1]! - pt[1]]
+  let bestPoint: LonLat = [c[0]![0]!, c[0]![1]!]
+  const a0 = toXY(c[0]!)
+  let bestD2 = a0[0] * a0[0] + a0[1] * a0[1]
+  for (let i = 1; i < c.length; i++) {
+    const a = toXY(c[i - 1]!)
+    const b = toXY(c[i]!)
+    const dx = b[0] - a[0]
+    const dy = b[1] - a[1]
+    const len2 = dx * dx + dy * dy
+    let t = len2 === 0 ? 0 : (-a[0] * dx - a[1] * dy) / len2
+    t = Math.max(0, Math.min(1, t))
+    const px = a[0] + t * dx
+    const py = a[1] + t * dy
+    const d2 = px * px + py * py
+    if (d2 < bestD2) {
+      bestD2 = d2
+      bestPoint = [pt[0] + px / kx, pt[1] + py]
+    }
+  }
+  return { point: bestPoint, distM: haversineM(pt, bestPoint) }
 }
 
 /** Gesamtlänge einer Linie in Metern (gerundet). */
@@ -83,8 +114,7 @@ export function elevationGainLoss(
 export function wgs84ToLv95([lon, lat]: LonLat): [number, number] {
   const p = (lat * 3600 - 169028.66) / 10000
   const l = (lon * 3600 - 26782.5) / 10000
-  const e =
-    2600072.37 + 211455.93 * l - 10938.51 * l * p - 0.36 * l * p * p - 44.54 * l ** 3
+  const e = 2600072.37 + 211455.93 * l - 10938.51 * l * p - 0.36 * l * p * p - 44.54 * l ** 3
   const n =
     1200147.07 +
     308807.95 * p +

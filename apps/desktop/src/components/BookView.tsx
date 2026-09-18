@@ -22,6 +22,10 @@ interface Props {
    * Kacheln kompakt untereinander, eine davon nach links über die Karte aufklappbar.
    */
   variant?: 'page' | 'panel'
+  /** Panel: Bild, dessen Foto-Pin auf der Karte markiert ist (Hover/Klick). */
+  highlightImageId?: string | null
+  /** Panel: Hover über einem Thumbnail → Foto-Pin auf der Karte hervorheben. */
+  onImageHover?: (imageId: string | null) => void
 }
 
 /** Markdown grob zu Fliesstext für die Kompaktansicht (Kachel-Vorschau). */
@@ -81,6 +85,8 @@ export function BookView({
   onHighlightDone,
   readOnly = false,
   variant = 'page',
+  highlightImageId = null,
+  onImageHover,
 }: Props) {
   const panel = variant === 'panel'
   const { data: cards, isLoading } = useCards(tourId)
@@ -191,6 +197,8 @@ export function BookView({
         onDragEnd={() => setDragId(null)}
         onDropOn={() => handleDrop(card.id)}
         onCollapse={panel ? () => setExpandedId(null) : undefined}
+        highlightImageId={highlightImageId}
+        onImageHover={onImageHover}
       />
     ) : (
       <TextCard
@@ -271,6 +279,12 @@ export function BookView({
                   card={card}
                   images={imagesByCard.get(card.id) ?? []}
                   onExpand={() => setExpandedId(card.id)}
+                  onOpenImage={(index) => {
+                    void enterFullscreen()
+                    setViewbox({ cardId: card.id, index })
+                  }}
+                  highlightImageId={highlightImageId}
+                  onImageHover={onImageHover}
                 />
               )
             )}
@@ -332,24 +346,39 @@ function CompactTile({
   card,
   images,
   onExpand,
+  onOpenImage,
+  highlightImageId,
+  onImageHover,
 }: {
   card: Card
   images: Image[]
   onExpand: () => void
+  /** Thumbnail-Klick: Viewbox bei diesem Index öffnen. */
+  onOpenImage: (index: number) => void
+  highlightImageId: string | null
+  onImageHover?: (imageId: string | null) => void
 }) {
-  const preview = images.slice(0, 6)
-  const urls = useImageUrls(preview)
-  const more = images.length - preview.length
+  const urls = useImageUrls(images)
   const snippet = card.body_md ? plainSnippet(card.body_md) : ''
+  const stripRef = useRef<HTMLDivElement>(null)
+
+  // Markiertes Bild (Foto-Pin auf der Karte) ins sichtbare Karussell scrollen.
+  useEffect(() => {
+    if (!highlightImageId || !stripRef.current) return
+    const el = stripRef.current.querySelector<HTMLElement>(`[data-image-id="${highlightImageId}"]`)
+    el?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' })
+  }, [highlightImageId])
 
   return (
-    <button
+    <div
       id={`card-${card.id}`}
-      className="group ml-auto block w-[36rem] rounded-xl border border-white/60 bg-white/95 p-3 text-left shadow-md backdrop-blur-md transition hover:-translate-x-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-      title="Aufklappen"
-      onClick={onExpand}
+      className="ml-auto w-[36rem] rounded-xl border border-white/60 bg-white/95 shadow-md backdrop-blur-md"
     >
-      <div className="flex items-start gap-2">
+      <button
+        className="group flex w-full items-start gap-2 rounded-xl p-3 text-left transition hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        title="Aufklappen"
+        onClick={onExpand}
+      >
         <svg
           className="mt-0.5 h-4 w-4 shrink-0 text-gray-300 transition group-hover:text-blue-600"
           viewBox="0 0 24 24"
@@ -363,44 +392,81 @@ function CompactTile({
           <path d="m15 6-6 6 6 6" />
         </svg>
         <div className="min-w-0 flex-1">
-          {card.taken_at && (
-            <div className="text-[11px] text-gray-400">{card.taken_at.slice(0, 10)}</div>
-          )}
+          <div className="flex items-baseline justify-between gap-2">
+            {card.taken_at ? (
+              <div className="text-[11px] text-gray-400">{card.taken_at.slice(0, 10)}</div>
+            ) : (
+              <span />
+            )}
+            {card.kind === 'images' && (
+              <div className="text-[11px] text-gray-400">
+                {images.length} {images.length === 1 ? 'Bild' : 'Bilder'}
+              </div>
+            )}
+          </div>
           <div className="line-clamp-2 text-sm font-semibold leading-snug text-gray-900">
             {card.title || (card.kind === 'images' ? 'Bilder' : 'Ohne Titel')}
           </div>
-          {card.kind === 'images' ? (
-            images.length === 0 ? (
-              <div className="mt-1.5 text-xs text-gray-400">Noch keine Bilder</div>
-            ) : (
-              <div className="mt-2 grid grid-cols-6 gap-1.5">
-                {preview.map((img, i) => {
-                  const u = urls[img.id]
-                  const last = i === preview.length - 1 && more > 0
-                  return (
-                    <div
-                      key={img.id}
-                      className="relative aspect-square overflow-hidden rounded-md bg-gray-100"
-                    >
-                      {u && <img src={u.thumb} className="h-full w-full object-cover" alt="" />}
-                      {last && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs font-semibold text-white">
-                          +{more}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          ) : (
-            snippet && (
-              <div className="mt-1 line-clamp-4 text-sm leading-snug text-gray-600">{snippet}</div>
-            )
+          {card.kind === 'text' && snippet && (
+            <div className="mt-1 line-clamp-4 text-sm leading-snug text-gray-600">{snippet}</div>
+          )}
+          {card.kind === 'images' && images.length === 0 && (
+            <div className="mt-1 text-xs text-gray-400">Noch keine Bilder</div>
           )}
         </div>
-      </div>
-    </button>
+      </button>
+
+      {/* Karussell: alle Bilder horizontal scrollbar; Hover markiert den Foto-Pin,
+          Klick öffnet die Viewbox. */}
+      {card.kind === 'images' && images.length > 0 && (
+        <div
+          ref={stripRef}
+          className="flex snap-x gap-1.5 overflow-x-auto overscroll-x-contain px-3 pb-3 pt-1 [scrollbar-width:thin]"
+          onMouseLeave={() => onImageHover?.(null)}
+        >
+          {images.map((img, i) => {
+            const u = urls[img.id]
+            const hot = img.id === highlightImageId
+            const hasGps = img.lat !== null && img.lon !== null
+            return (
+              <button
+                key={img.id}
+                data-image-id={img.id}
+                className={`relative h-24 w-24 shrink-0 snap-start overflow-hidden rounded-md bg-gray-100 transition duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                  hot
+                    ? 'scale-[1.04] ring-2 ring-blue-500 ring-offset-1'
+                    : 'opacity-90 hover:opacity-100 hover:ring-2 hover:ring-blue-300'
+                }`}
+                title={img.caption || 'Bild öffnen'}
+                onMouseEnter={() => onImageHover?.(img.id)}
+                onClick={() => onOpenImage(i)}
+              >
+                {u ? (
+                  <img
+                    src={u.thumb}
+                    className="h-full w-full object-cover"
+                    alt={img.caption ?? ''}
+                    draggable={false}
+                  />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">
+                    {u === null ? 'nicht synchron' : '…'}
+                  </span>
+                )}
+                {hasGps && (
+                  <span
+                    className={`absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
+                      hot ? 'bg-blue-600' : 'bg-blue-500/80'
+                    }`}
+                    title="mit GPS-Position auf der Karte"
+                  />
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -644,6 +710,8 @@ interface ImagesCardProps {
   onDragEnd: () => void
   onDropOn: () => void
   onCollapse?: () => void
+  highlightImageId?: string | null
+  onImageHover?: (imageId: string | null) => void
 }
 
 function ImagesCard({
@@ -659,8 +727,17 @@ function ImagesCard({
   onDragEnd,
   onDropOn,
   onCollapse,
+  highlightImageId = null,
+  onImageHover,
 }: ImagesCardProps) {
   const [activeIdx, setActiveIdx] = useState(0)
+
+  // Markierter Foto-Pin (Karte) → dieses Bild gross zeigen.
+  useEffect(() => {
+    if (!highlightImageId) return
+    const i = images.findIndex((im) => im.id === highlightImageId)
+    if (i >= 0) setActiveIdx(i)
+  }, [highlightImageId, images])
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const urls = useImageUrls(images)
@@ -774,10 +851,16 @@ function ImagesCard({
                     {u ? (
                       <img
                         src={u.thumb}
-                        className={`h-20 w-20 cursor-pointer rounded-md object-cover ${
-                          i === activeIdx ? 'ring-2 ring-blue-500' : 'opacity-80 hover:opacity-100'
+                        className={`h-20 w-20 cursor-pointer rounded-md object-cover transition ${
+                          img.id === highlightImageId
+                            ? 'ring-2 ring-blue-500 ring-offset-1'
+                            : i === activeIdx
+                              ? 'ring-2 ring-blue-500'
+                              : 'opacity-80 hover:opacity-100'
                         }`}
                         onClick={() => setActiveIdx(i)}
+                        onMouseEnter={() => onImageHover?.(img.id)}
+                        onMouseLeave={() => onImageHover?.(null)}
                       />
                     ) : (
                       <div className="flex h-20 w-20 items-center justify-center rounded-md bg-gray-100 text-center text-[10px] leading-tight text-gray-400">

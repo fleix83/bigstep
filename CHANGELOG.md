@@ -1,5 +1,13 @@
 # Changelog
 
+## Foto-Pins ↔ Bild-Karussell (2026-09-18)
+
+- **Bild ↔ Position verknüpft (Desktop, Book-Modus):** Foto-Pins der Bilder mit GPS liegen auf der Route — GPS-Positionen bis 250 m neben der Route werden auf den nächsten Routenpunkt gesetzt (`nearestPointOnLine` in `@tourenbuch/shared`, 4 Unit-Tests), weiter entfernte bleiben an der Rohposition.
+- **Hover/Klick auf einen Pin** hebt das Bild im Karussell der Kachel hervor (blauer Ring, ins Sichtfeld gescrollt); Klick bleibt markiert, bis ein anderer Pin geklickt wird. In der aufgeklappten Bilder-Kachel wird das Bild gross gezeigt. **Hover über ein Thumbnail** (kompakt oder aufgeklappt) hebt den Pin auf der Karte hervor (1.5×, blauer Ring, oben auf).
+- **Kompakte Bilder-Kachel ist jetzt ein Karussell:** alle Bilder als 96-px-Thumbnails horizontal scrollbar (Snap), Klick öffnet die Viewbox beim Bild; blauer Punkt markiert Bilder mit GPS; Kopfzeile (Chevron/Titel) klappt auf. Pin-Klick wechselt in den Book-Modus, ohne die Kachel aufzuklappen.
+- MapView: `onPhotoClick(cardId, imageId)`, `onPhotoHover`, `highlightImageId`; Hervorhebung auf einer inneren Box, weil MapLibre das Marker-Element per transform positioniert.
+- Verifiziert auf Produktion: Karussell (18 Thumbnails, scrollbar), Hover-Ring, Viewbox-Öffnen. **Pin-Verknüpfung nicht verifizierbar:** keines der 33 Bilder in der DB hat GPS-Koordinaten — die Originale wurden offenbar ohne Ortsdaten exportiert. Bilder mit EXIF-GPS neu importieren, dann erscheinen die Pins.
+
 ## Book-Modus: Panel nur im Book-Reiter, doppelt breit; Viewer über allem (2026-09-18)
 
 - **Book-Reiter auf Desktop = Karte + Book-Panel.** Die Kachel-Spalte erscheint nur noch, wenn «Book» in der Nav aktiv ist; im Karten-Reiter ist die Karte frei. Das frühere Grid gibt es auf Desktop nicht mehr (mobil unverändert als Overlay).

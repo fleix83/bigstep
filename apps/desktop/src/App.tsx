@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { elevationGainLoss, lineBbox, lineDistanceM, serializeGpx } from '@tourenbuch/shared'
+import {
+  elevationGainLoss,
+  lineBbox,
+  lineDistanceM,
+  nearestPointOnLine,
+  serializeGpx,
+} from '@tourenbuch/shared'
 import { ApiProvider, useApi, useApiConfig, useAuthInfo } from './lib/api'
 import { saveTextFile } from './lib/save-file'
 import { TourList } from './components/TourList'
@@ -17,6 +23,9 @@ import { resolveImageUrls } from './lib/image-store'
 import type { PhotoPin } from './components/MapView'
 
 type Tab = 'karte' | 'book'
+
+/** Foto-Pins werden bis zu dieser Distanz auf die Route gesetzt (GPS-Streuung). */
+const PIN_SNAP_MAX_M = 250
 
 function formatDuration(min: number): string {
   const h = Math.floor(min / 60)
@@ -56,28 +65,42 @@ function Shell() {
   const [editing, setEditing] = useState(false)
   const editor = useRouteEditor(selectedTour, editing && !readOnly && isOwner && tab === 'karte')
   const [highlightCardId, setHighlightCardId] = useState<string | null>(null)
+  // Bild ↔ Foto-Pin: Hover ist flüchtig, Klick auf einen Pin bleibt markiert.
+  const [hoverImageId, setHoverImageId] = useState<string | null>(null)
+  const [pinnedImageId, setPinnedImageId] = useState<string | null>(null)
+  const highlightImageId = hoverImageId ?? pinnedImageId
 
   // Foto-Pins: Bilder mit GPS der aktiven Tour, Thumb-URLs lokal auflösen.
+  // Liegt die GPS-Position nahe an der Route, wird der Pin auf die Route gesetzt.
   const { data: tourImages } = useTourImages(selectedId)
+  const tourGeometry = selectedTour?.geometry ?? null
   const [photoPins, setPhotoPins] = useState<PhotoPin[]>([])
   useEffect(() => {
     let alive = true
     const withGps = (tourImages ?? []).filter((i) => i.lat !== null && i.lon !== null)
     void Promise.all(
-      withGps.map(async (i) => ({
-        imageId: i.id,
-        cardId: i.card_id,
-        lon: i.lon!,
-        lat: i.lat!,
-        thumbUrl: (await resolveImageUrls(i, api))?.thumb ?? null,
-      }))
+      withGps.map(async (i) => {
+        let lon = i.lon!
+        let lat = i.lat!
+        if (tourGeometry) {
+          const near = nearestPointOnLine(tourGeometry, [lon, lat])
+          if (near.distM <= PIN_SNAP_MAX_M) [lon, lat] = near.point
+        }
+        return {
+          imageId: i.id,
+          cardId: i.card_id,
+          lon,
+          lat,
+          thumbUrl: (await resolveImageUrls(i, api))?.thumb ?? null,
+        }
+      })
     ).then((pins) => {
       if (alive) setPhotoPins(pins)
     })
     return () => {
       alive = false
     }
-  }, [tourImages, api])
+  }, [tourImages, api, tourGeometry])
 
   useEffect(() => {
     if (!fullscreen) return
@@ -90,6 +113,8 @@ function Shell() {
 
   const selectTour = (id: string | null) => {
     setEditing(false)
+    setPinnedImageId(null)
+    setHoverImageId(null)
     setSelectedId(id)
   }
 
@@ -246,12 +271,16 @@ function Shell() {
             preview={preview?.line ?? null}
             editor={editor}
             photos={photoPins}
-            onPhotoClick={(cardId) => {
+            onPhotoClick={(cardId, imageId) => {
               setFullscreen(false)
-              // Book-Modus: Desktop klappt die Kachel im Panel auf, mobil zeigt der Reiter das Grid.
               setTab('book')
-              setHighlightCardId(cardId)
+              // Desktop: Bild im Karussell des Panels markieren (bleibt bis zum nächsten Klick);
+              // mobil: im Grid zur Kachel scrollen.
+              setPinnedImageId(imageId)
+              if (!window.matchMedia('(min-width: 768px)').matches) setHighlightCardId(cardId)
             }}
+            onPhotoHover={setHoverImageId}
+            highlightImageId={highlightImageId}
             fullscreen={fullscreen}
             onToggleFullscreen={() => setFullscreen((f) => !f)}
             hideControls={tab === 'book'}
@@ -346,6 +375,8 @@ function Shell() {
                 highlightCardId={highlightCardId}
                 onHighlightDone={() => setHighlightCardId(null)}
                 readOnly={!isOwner}
+                highlightImageId={highlightImageId}
+                onImageHover={setHoverImageId}
               />
             </div>
           )}
