@@ -165,25 +165,7 @@ export async function processImageFile(file: File): Promise<ProcessedImage> {
     // Bild ohne (lesbares) EXIF ist völlig ok.
   }
 
-  let decodable: Blob = file
-  if (isHeic(file)) {
-    const { default: heic2any } = await import('heic2any')
-    const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 })
-    decodable = Array.isArray(converted) ? converted[0]! : converted
-  }
-
-  // imageOrientation: EXIF-Rotation direkt beim Decodieren anwenden.
-  let bitmap: ImageBitmap
-  try {
-    bitmap = await createImageBitmap(decodable, { imageOrientation: 'from-image' })
-  } catch (err) {
-    throw new Error(
-      `Bild konnte nicht dekodiert werden (${file.type || 'unbekannter Typ'}, ${Math.round(
-        file.size / 1024
-      )} KB): ${err instanceof Error ? err.message : String(err)}`,
-      { cause: err }
-    )
-  }
+  const bitmap = await decodeToBitmap(file)
   try {
     const display = await encodeScaled(bitmap, DISPLAY_MAX)
     const thumb = await encodeScaled(bitmap, THUMB_MAX)
@@ -198,5 +180,75 @@ export async function processImageFile(file: File): Promise<ProcessedImage> {
     }
   } finally {
     bitmap.close()
+  }
+}
+
+/**
+ * Decodieren mit EXIF-Rotation. Reihenfolge:
+ * 1. createImageBitmap direkt (Safari kann HEIC nativ — heic2any ist dort
+ *    unnötig und speicherhungrig).
+ * 2. HEIC → heic2any (libheif-wasm) → JPEG → createImageBitmap.
+ * 3. Fallback über ein <img>-Element (Safari wendet die EXIF-Orientierung
+ *    dort selbst an), falls createImageBitmap den Blob ablehnt.
+ */
+async function decodeToBitmap(file: File): Promise<ImageBitmap> {
+  const errors: unknown[] = []
+  const tryBitmap = async (blob: Blob): Promise<ImageBitmap | null> => {
+    try {
+      return await createImageBitmap(blob, { imageOrientation: 'from-image' })
+    } catch (err) {
+      errors.push(err)
+      return null
+    }
+  }
+
+  const direct = await tryBitmap(file)
+  if (direct) return direct
+
+  if (isHeic(file)) {
+    try {
+      const { default: heic2any } = await import('heic2any')
+      const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 })
+      const jpeg = Array.isArray(converted) ? converted[0]! : converted
+      const viaHeic = await tryBitmap(jpeg)
+      if (viaHeic) return viaHeic
+      const viaImg = await bitmapViaImageElement(jpeg)
+      if (viaImg) return viaImg
+    } catch (err) {
+      errors.push(err)
+    }
+  } else {
+    const viaImg = await bitmapViaImageElement(file)
+    if (viaImg) return viaImg
+  }
+
+  const last = errors[errors.length - 1]
+  throw new Error(
+    `Bild konnte nicht dekodiert werden (${file.type || 'unbekannter Typ'}, ${Math.round(
+      file.size / 1024
+    )} KB): ${last instanceof Error ? last.message : String(last ?? 'unbekannt')}`,
+    { cause: last }
+  )
+}
+
+/** Decodieren über <img>; das Element liefert bereits ausgerichtete Pixel. */
+async function bitmapViaImageElement(blob: Blob): Promise<ImageBitmap | null> {
+  const url = URL.createObjectURL(blob)
+  try {
+    const img = new Image()
+    img.decoding = 'async'
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = () => reject(new Error('img.onerror'))
+      img.src = url
+    })
+    if (typeof img.decode === 'function') await img.decode().catch(() => {})
+    if (!img.naturalWidth || !img.naturalHeight) return null
+    // Kein imageOrientation hier: das <img> ist schon gedreht, sonst doppelt.
+    return await createImageBitmap(img)
+  } catch {
+    return null
+  } finally {
+    URL.revokeObjectURL(url)
   }
 }

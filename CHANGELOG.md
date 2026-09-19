@@ -1,5 +1,14 @@
 # Changelog
 
+## iPad: Layout im Book-Modus, Bild-Import auf Safari (2026-09-19)
+
+- **Bild-Import auf iPad/iPhone-Safari scheiterte an OPFS:** Safari bis Version 25 kann OPFS lesen, hat aber kein `createWritable()` auf Datei-Handles (erst Safari 26) — das Speichern der Ableitungen warf, der Import blieb hängen. Der Browser-Store nutzt jetzt OPFS nur, wenn es schreibbar ist, sonst **IndexedDB** (`tourenbuch-images`); Lesen prüft OPFS und IndexedDB, damit bestehende Bilder erhalten bleiben. (Der Store-Teil war bereits im vorherigen Commit mitgerutscht.)
+- **Decodieren robuster:** `createImageBitmap` zuerst direkt (Safari decodiert HEIC nativ — heic2any nur noch als Fallback), danach Fallback über ein `<img>`-Element, falls der Browser den Blob in `createImageBitmap` ablehnt.
+- **Book-Panel auf Tablet-Breiten:** Die Spalte beginnt jetzt **unterhalb der Reiter-Pille** (statt bündig oben) — auf 1024–1180 px lag die Pille über dem Panel-Kopf und über der aufgeklappten Kachel. Spaltenbreite skaliert mit dem Viewport (`clamp(18rem, 38vw, 36rem)`: iPad 11″ quer ≈ 448 px, Desktop unverändert 576 px), aufgeklappt bis 64 rem bzw. 23 rem rechts der Sidebar (Zoom-Buttons bleiben frei).
+- **Touch-Geräte ohne Hover:** Löschen-Buttons (Kachel, Thumbnail, Tour) und der 📍-Button im Karussell waren nur bei Hover sichtbar — jetzt per `touch:`-Variante (`@media (hover: none)`) dauerhaft eingeblendet.
+- **Tourenliste:** Kennzahlen umbrechen nicht mehr mitten in «16.0 km» (nowrap pro Wert, Zeile darf umbrechen).
+- Verifiziert im Chrome mit simuliertem 1180×820-Viewport (Pille frei, Panel darunter, Karte sichtbar; aufgeklappt bis neben die Sidebar) und IndexedDB-Roundtrip; **nicht auf einem echten iPad getestet.**
+
 ## «Position auf der Karte setzen» (2026-09-19)
 
 - **Bildposition manuell setzen** (Desktop, Book-Modus, eigene Touren): 📍-Button auf jedem Karussell-Thumbnail (bei Hover) und unter dem grossen Bild der aufgeklappten Kachel startet den Modus — Fadenkreuz auf der Karte, Hinweisleiste oben; der nächste Kartenklick speichert die Position (`PATCH /api/images/:id` mit lat/lon, Schema erweitert um `lat`/`lon` nullable, +1 Test). Esc, «Abbrechen» oder Reiterwechsel brechen ab; «Position entfernen» löscht sie wieder.

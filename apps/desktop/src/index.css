@@ -13,6 +13,10 @@
   --font-logo: 'Caveat', 'Bradley Hand', 'Segoe Script', 'Comic Sans MS', cursive;
 }
 
+/* Touch-Geräte (iPad, Smartphone): kein Hover → Controls, die sonst nur bei
+   Hover erscheinen, dauerhaft zeigen. */
+@custom-variant touch (@media (hover: none));
+
 html,
 body,
 #root {

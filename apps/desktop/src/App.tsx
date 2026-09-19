@@ -404,11 +404,12 @@ function Shell() {
             </div>
           )}
 
-          {/* Book-Modus auf Desktop: Kacheln kompakt als schwebende Spalte rechts auf der
-              Karte, einzeln nach links aufklappbar. Kartenoptionen/Ortssuche sind dabei
-              ausgeblendet (hideControls). */}
+          {/* Book-Modus auf Desktop/Tablet: Kacheln kompakt als schwebende Spalte rechts
+              auf der Karte, einzeln nach links aufklappbar. Beginnt unterhalb der
+              Reiter-Pille (kein Überlappen auf schmalen Viewports wie iPad);
+              Kartenoptionen/Ortssuche sind dabei ausgeblendet (hideControls). */}
           {tab === 'book' && selectedTour && !fullscreen && (
-            <div className="absolute bottom-3 right-3 top-3 z-10 hidden md:block">
+            <div className="absolute bottom-3 right-3 top-[3.875rem] z-10 hidden md:block">
               <BookView
                 variant="panel"
                 tourId={selectedTour.id}

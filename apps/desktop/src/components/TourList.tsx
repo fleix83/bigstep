@@ -356,7 +356,7 @@ function TourListItem({
         )}
         {!readOnly && (
           <button
-            className="hidden shrink-0 rounded px-1 text-gray-400 hover:bg-red-100 hover:text-red-600 group-hover:block"
+            className="hidden shrink-0 rounded px-1 text-gray-400 hover:bg-red-100 hover:text-red-600 group-hover:block touch:block"
             title="Tour löschen"
             onClick={(e) => {
               e.stopPropagation()
@@ -368,10 +368,10 @@ function TourListItem({
         )}
       </div>
       {ownerName && <div className="mt-0.5 text-xs text-gray-400">von {ownerName}</div>}
-      <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
-        <span>{formatDistance(tour.distance_m)}</span>
-        <span>↑ {formatMeters(tour.ascent_m)}</span>
-        <span>🕓 {formatDuration(tour.duration_min)}</span>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
+        <span className="whitespace-nowrap">{formatDistance(tour.distance_m)}</span>
+        <span className="whitespace-nowrap">↑ {formatMeters(tour.ascent_m)}</span>
+        <span className="whitespace-nowrap">🕓 {formatDuration(tour.duration_min)}</span>
         {readOnly ? (
           <span className="ml-auto">
             <StatusBadge status={tour.status} />

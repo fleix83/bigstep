@@ -230,12 +230,13 @@ export function BookView({
     const expanded = expandedId !== null && cards?.some((c) => c.id === expandedId)
     return (
       <div
-        className={`flex h-full flex-col transition-[width] duration-200 ease-out ${
-          expanded ? 'w-[min(64rem,calc(100vw-22rem))]' : 'w-[36rem]'
+        className={`flex h-full flex-col transition-[width] duration-200 ease-out [--panel-w:clamp(18rem,38vw,36rem)] ${
+          expanded ? 'w-[min(64rem,calc(100vw-23rem))]' : 'w-(--panel-w)'
         }`}
       >
-        {/* Kopf: rechtsbündig, immer in Spaltenbreite */}
-        <div className="ml-auto flex w-[36rem] items-center justify-between gap-2 pb-2">
+        {/* Kopf: rechtsbündig, immer in Spaltenbreite. Die Spaltenbreite skaliert mit
+            dem Viewport (iPad: schmaler), damit links noch Karte sichtbar bleibt. */}
+        <div className="ml-auto flex w-(--panel-w) items-center justify-between gap-2 pb-2">
           <span className="rounded-full bg-white/90 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500 shadow-sm backdrop-blur">
             Book
           </span>
@@ -269,12 +270,12 @@ export function BookView({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
           {isLoading && (
-            <p className="ml-auto w-[36rem] rounded-xl bg-white/90 p-3 text-xs text-gray-500">
+            <p className="ml-auto w-(--panel-w) rounded-xl bg-white/90 p-3 text-xs text-gray-500">
               Lade Kacheln …
             </p>
           )}
           {cards && cards.length === 0 && (
-            <p className="ml-auto w-[36rem] rounded-xl bg-white/90 p-3 text-xs text-gray-500 shadow-sm">
+            <p className="ml-auto w-(--panel-w) rounded-xl bg-white/90 p-3 text-xs text-gray-500 shadow-sm">
               {readOnly ? 'Noch keine Kacheln.' : 'Noch keine Kacheln – «+ Text» oder «+ Bilder».'}
             </p>
           )}
@@ -389,7 +390,7 @@ function CompactTile({
   return (
     <div
       id={`card-${card.id}`}
-      className="ml-auto w-[36rem] rounded-xl border border-white/60 bg-white/95 shadow-md backdrop-blur-md"
+      className="ml-auto w-(--panel-w) rounded-xl border border-white/60 bg-white/95 shadow-md backdrop-blur-md"
     >
       <button
         className="group flex w-full items-start gap-2 rounded-xl p-3 text-left transition hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
@@ -488,7 +489,7 @@ function CompactTile({
                     className={`absolute left-1 top-1 flex h-6 w-6 items-center justify-center rounded-full text-xs shadow transition ${
                       placingThis
                         ? 'bg-blue-600 text-white'
-                        : 'bg-white/90 text-gray-700 opacity-0 hover:bg-white group-hover/thumb:opacity-100'
+                        : 'bg-white/90 text-gray-700 opacity-0 hover:bg-white group-hover/thumb:opacity-100 touch:opacity-100'
                     }`}
                     title={
                       placingThis
@@ -598,7 +599,7 @@ function CardHeader({
       )}
       {!readOnly && (
         <button
-          className="hidden rounded px-1 text-gray-400 hover:bg-red-100 hover:text-red-600 group-hover:block"
+          className="hidden rounded px-1 text-gray-400 hover:bg-red-100 hover:text-red-600 group-hover:block touch:block"
           title="Kachel löschen"
           onClick={onDelete}
         >
@@ -949,7 +950,7 @@ function ImagesCard({
                     )}
                     {!readOnly && (
                       <button
-                        className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-gray-900/80 text-[10px] text-white group-hover/thumb:flex"
+                        className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-gray-900/80 text-[10px] text-white group-hover/thumb:flex touch:flex"
                         title="Bild entfernen"
                         onClick={() => onDeleteImage(img)}
                       >

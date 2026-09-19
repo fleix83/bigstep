@@ -84,8 +84,7 @@ async function idbSave(name: string, blob: Blob): Promise<void> {
   const db = await idbOpen()
   try {
     const tx = db.transaction(IDB_STORE, 'readwrite')
-    // Safari speichert Blobs zuverlässiger als ArrayBuffer-Kopien nicht — wir
-    // legen den Blob direkt ab; der Typ bleibt erhalten.
+    // Blob direkt ablegen (MIME-Typ bleibt erhalten).
     await idbRequest(tx.objectStore(IDB_STORE).put(blob, name))
     await new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve()
