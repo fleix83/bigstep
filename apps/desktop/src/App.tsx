@@ -69,6 +69,8 @@ function Shell() {
   const [hoverImageId, setHoverImageId] = useState<string | null>(null)
   const [pinnedImageId, setPinnedImageId] = useState<string | null>(null)
   const highlightImageId = hoverImageId ?? pinnedImageId
+  // «Position auf der Karte setzen»: Bild, dessen Position der nächste Kartenklick setzt.
+  const [placingImageId, setPlacingImageId] = useState<string | null>(null)
 
   // Foto-Pins: Bilder mit GPS der aktiven Tour, Thumb-URLs lokal auflösen.
   // Liegt die GPS-Position nahe an der Route, wird der Pin auf die Route gesetzt.
@@ -111,10 +113,42 @@ function Shell() {
     return () => window.removeEventListener('keydown', onKey)
   }, [fullscreen])
 
+  // «Position setzen»: Esc bricht ab; Reiterwechsel ebenfalls.
+  useEffect(() => {
+    if (!placingImageId) return
+    if (tab !== 'book') {
+      setPlacingImageId(null)
+      return
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPlacingImageId(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [placingImageId, tab])
+
+  const placingImage = placingImageId
+    ? ((tourImages ?? []).find((i) => i.id === placingImageId) ?? null)
+    : null
+
+  const saveImagePosition = async (imageId: string, lonLat: [number, number] | null) => {
+    try {
+      await api.updateImage(imageId, {
+        lat: lonLat ? lonLat[1] : null,
+        lon: lonLat ? lonLat[0] : null,
+      })
+      await queryClient.invalidateQueries({ queryKey: ['images'] })
+      setPinnedImageId(lonLat ? imageId : null)
+    } finally {
+      setPlacingImageId(null)
+    }
+  }
+
   const selectTour = (id: string | null) => {
     setEditing(false)
     setPinnedImageId(null)
     setHoverImageId(null)
+    setPlacingImageId(null)
     setSelectedId(id)
   }
 
@@ -281,6 +315,13 @@ function Shell() {
             }}
             onPhotoHover={setHoverImageId}
             highlightImageId={highlightImageId}
+            placing={placingImageId !== null}
+            onPlaceClick={(lonLat) => {
+              if (placingImageId) void saveImagePosition(placingImageId, lonLat)
+            }}
+            onPhotoMove={
+              isOwner && !readOnly ? (id, lonLat) => void saveImagePosition(id, lonLat) : undefined
+            }
             fullscreen={fullscreen}
             onToggleFullscreen={() => setFullscreen((f) => !f)}
             hideControls={tab === 'book'}
@@ -377,7 +418,37 @@ function Shell() {
                 readOnly={!isOwner}
                 highlightImageId={highlightImageId}
                 onImageHover={setHoverImageId}
+                placingImageId={placingImageId}
+                onSetPosition={(id) => setPlacingImageId((cur) => (cur === id ? null : id))}
               />
+            </div>
+          )}
+
+          {/* Hinweisleiste im «Position setzen»-Modus */}
+          {placingImageId && (
+            <div className="absolute left-1/2 top-3 z-30 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-blue-200 bg-white/95 px-4 py-2 text-sm text-gray-800 shadow-lg backdrop-blur md:left-[calc(50%+0.125rem)]">
+              <span className="text-lg" aria-hidden="true">
+                📍
+              </span>
+              <span>
+                Auf die Karte klicken, um die Position
+                {placingImage?.caption ? ` von «${placingImage.caption}»` : ' des Bildes'} zu
+                setzen.
+              </span>
+              {placingImage?.lat !== null && placingImage?.lat !== undefined && (
+                <button
+                  className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                  onClick={() => void saveImagePosition(placingImageId, null)}
+                >
+                  Position entfernen
+                </button>
+              )}
+              <button
+                className="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100"
+                onClick={() => setPlacingImageId(null)}
+              >
+                Abbrechen (Esc)
+              </button>
             </div>
           )}
 

@@ -26,6 +26,10 @@ interface Props {
   highlightImageId?: string | null
   /** Panel: Hover über einem Thumbnail → Foto-Pin auf der Karte hervorheben. */
   onImageHover?: (imageId: string | null) => void
+  /** Panel: Bild, für das gerade eine Position auf der Karte gesetzt wird. */
+  placingImageId?: string | null
+  /** Panel: «Position auf der Karte setzen» für ein Bild starten (Toggle). */
+  onSetPosition?: (imageId: string) => void
 }
 
 /** Markdown grob zu Fliesstext für die Kompaktansicht (Kachel-Vorschau). */
@@ -90,6 +94,8 @@ export function BookView({
   variant = 'page',
   highlightImageId = null,
   onImageHover,
+  placingImageId = null,
+  onSetPosition,
 }: Props) {
   const panel = variant === 'panel'
   const { data: cards, isLoading } = useCards(tourId)
@@ -202,6 +208,8 @@ export function BookView({
         onCollapse={panel ? () => setExpandedId(null) : undefined}
         highlightImageId={highlightImageId}
         onImageHover={onImageHover}
+        placingImageId={placingImageId}
+        onSetPosition={readOnly ? undefined : onSetPosition}
       />
     ) : (
       <TextCard
@@ -288,6 +296,8 @@ export function BookView({
                   }}
                   highlightImageId={highlightImageId}
                   onImageHover={onImageHover}
+                  placingImageId={placingImageId}
+                  onSetPosition={readOnly ? undefined : onSetPosition}
                 />
               )
             )}
@@ -352,6 +362,8 @@ function CompactTile({
   onOpenImage,
   highlightImageId,
   onImageHover,
+  placingImageId = null,
+  onSetPosition,
 }: {
   card: Card
   images: Image[]
@@ -360,6 +372,8 @@ function CompactTile({
   onOpenImage: (index: number) => void
   highlightImageId: string | null
   onImageHover?: (imageId: string | null) => void
+  placingImageId?: string | null
+  onSetPosition?: (imageId: string) => void
 }) {
   const urls = useImageUrls(images)
   const snippet = card.body_md ? plainSnippet(card.body_md) : ''
@@ -431,40 +445,68 @@ function CompactTile({
             const u = urls[img.id]
             const hot = img.id === highlightImageId
             const hasGps = img.lat !== null && img.lon !== null
+            const placingThis = img.id === placingImageId
             return (
-              <button
+              <div
                 key={img.id}
                 data-image-id={img.id}
-                className={`relative h-24 w-24 shrink-0 snap-start overflow-hidden rounded-md bg-gray-100 transition duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                  hot
-                    ? 'scale-[1.04] ring-2 ring-blue-500 ring-offset-1'
-                    : 'opacity-90 hover:opacity-100 hover:ring-2 hover:ring-blue-300'
-                }`}
-                title={img.caption || 'Bild öffnen'}
+                className="group/thumb relative shrink-0 snap-start"
                 onMouseEnter={() => onImageHover?.(img.id)}
-                onClick={() => onOpenImage(i)}
               >
-                {u ? (
-                  <img
-                    src={u.thumb}
-                    className="h-full w-full object-cover"
-                    alt={img.caption ?? ''}
-                    draggable={false}
-                  />
-                ) : (
-                  <span className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">
-                    {u === null ? 'nicht synchron' : '…'}
-                  </span>
-                )}
-                {hasGps && (
-                  <span
-                    className={`absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
-                      hot ? 'bg-blue-600' : 'bg-blue-500/80'
+                <button
+                  className={`relative h-24 w-24 overflow-hidden rounded-md bg-gray-100 transition duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                    hot || placingThis
+                      ? 'scale-[1.04] ring-2 ring-blue-500 ring-offset-1'
+                      : 'opacity-90 hover:opacity-100 hover:ring-2 hover:ring-blue-300'
+                  }`}
+                  title={img.caption || 'Bild öffnen'}
+                  onClick={() => onOpenImage(i)}
+                >
+                  {u ? (
+                    <img
+                      src={u.thumb}
+                      className="h-full w-full object-cover"
+                      alt={img.caption ?? ''}
+                      draggable={false}
+                    />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">
+                      {u === null ? 'nicht synchron' : '…'}
+                    </span>
+                  )}
+                  {hasGps && (
+                    <span
+                      className={`absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
+                        hot ? 'bg-blue-600' : 'bg-blue-500/80'
+                      }`}
+                      title="mit GPS-Position auf der Karte"
+                    />
+                  )}
+                </button>
+                {onSetPosition && (
+                  <button
+                    className={`absolute left-1 top-1 flex h-6 w-6 items-center justify-center rounded-full text-xs shadow transition ${
+                      placingThis
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white/90 text-gray-700 opacity-0 hover:bg-white group-hover/thumb:opacity-100'
                     }`}
-                    title="mit GPS-Position auf der Karte"
-                  />
+                    title={
+                      placingThis
+                        ? 'Position setzen: auf die Karte klicken (Esc bricht ab)'
+                        : hasGps
+                          ? 'Position auf der Karte ändern'
+                          : 'Position auf der Karte setzen'
+                    }
+                    aria-label="Position auf der Karte setzen"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onSetPosition(img.id)
+                    }}
+                  >
+                    📍
+                  </button>
                 )}
-              </button>
+              </div>
             )
           })}
         </div>
@@ -715,6 +757,8 @@ interface ImagesCardProps {
   onCollapse?: () => void
   highlightImageId?: string | null
   onImageHover?: (imageId: string | null) => void
+  placingImageId?: string | null
+  onSetPosition?: (imageId: string) => void
 }
 
 function ImagesCard({
@@ -732,6 +776,8 @@ function ImagesCard({
   onCollapse,
   highlightImageId = null,
   onImageHover,
+  placingImageId = null,
+  onSetPosition,
 }: ImagesCardProps) {
   const [activeIdx, setActiveIdx] = useState(0)
 
@@ -825,6 +871,32 @@ function ImagesCard({
                 </div>
               )}
             </div>
+
+            {/* Position auf der Karte (nur Desktop-Panel, eigene Tour) */}
+            {active && onSetPosition && (
+              <div className="mt-2 flex items-center gap-2 text-xs">
+                <button
+                  className={`rounded-md border px-2 py-1 transition ${
+                    active.id === placingImageId
+                      ? 'border-blue-600 bg-blue-600 text-white'
+                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                  }`}
+                  onClick={() => onSetPosition(active.id)}
+                >
+                  📍{' '}
+                  {active.id === placingImageId
+                    ? 'Auf die Karte klicken … (Esc bricht ab)'
+                    : active.lat !== null
+                      ? 'Position ändern'
+                      : 'Position auf der Karte setzen'}
+                </button>
+                {active.lat !== null && active.id !== placingImageId && (
+                  <span className="text-gray-400">
+                    {active.lat.toFixed(5)}, {active.lon?.toFixed(5)} · Pin auf der Karte ziehbar
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Untertitel des grossen Bildes */}
             {active &&

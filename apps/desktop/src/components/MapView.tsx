@@ -65,6 +65,11 @@ interface Props {
   onPhotoHover?: (imageId: string | null) => void
   /** Bild, dessen Pin hervorgehoben wird (Hover/Klick im Book-Panel oder auf der Karte). */
   highlightImageId?: string | null
+  /** «Position setzen»-Modus: Fadenkreuz, nächster Kartenklick liefert die Position. */
+  placing?: boolean
+  onPlaceClick?: (lonLat: [number, number]) => void
+  /** Foto-Pins per Drag verschieben (nur eigene Touren); liefert die neue Position. */
+  onPhotoMove?: (imageId: string, lonLat: [number, number]) => void
   /** Karten-Vollbild (Shell blendet Topbar/Sidebar/Tabs aus). */
   fullscreen?: boolean
   onToggleFullscreen?: () => void
@@ -182,6 +187,9 @@ export function MapView({
   onPhotoClick,
   onPhotoHover,
   highlightImageId = null,
+  placing = false,
+  onPlaceClick,
+  onPhotoMove,
   fullscreen = false,
   hideControls = false,
   onToggleFullscreen,
@@ -270,6 +278,10 @@ export function MapView({
   // Klick-Handler wird einmal registriert und liest den Editor über die Ref.
   const editorRef = useRef(editor)
   editorRef.current = editor
+  const placingRef = useRef(placing)
+  placingRef.current = placing
+  const onPlaceClickRef = useRef(onPlaceClick)
+  onPlaceClickRef.current = onPlaceClick
 
   // Karte GENAU EINMAL erzeugen, sobald der Startzustand steht. Wichtig:
   // keine Abhängigkeit auf `ui` selbst — sonst wird die Karte bei jedem
@@ -302,12 +314,17 @@ export function MapView({
     map.on('style.load', () => setReady(true))
     map.on('moveend', () => scheduleSaveRef.current())
     map.on('click', (e) => {
-      const ed = editorRef.current
-      if (!ed) return
       const p: [number, number] = [
         Math.round(e.lngLat.lng * 1e6) / 1e6,
         Math.round(e.lngLat.lat * 1e6) / 1e6,
       ]
+      // «Position setzen»: Klick liefert die Bildposition, sonst nichts.
+      if (placingRef.current) {
+        onPlaceClickRef.current?.(p)
+        return
+      }
+      const ed = editorRef.current
+      if (!ed) return
       // Klick auf ein bestehendes Segment fügt dort einen Wegpunkt ein,
       // Klick auf freie Karte hängt einen Wegpunkt an.
       const hits = map.queryRenderedFeatures(
@@ -416,6 +433,9 @@ export function MapView({
   onPhotoClickRef.current = onPhotoClick
   const onPhotoHoverRef = useRef(onPhotoHover)
   onPhotoHoverRef.current = onPhotoHover
+  const onPhotoMoveRef = useRef(onPhotoMove)
+  onPhotoMoveRef.current = onPhotoMove
+  const photosDraggable = onPhotoMove !== undefined
   useEffect(() => {
     const map = mapRef.current
     for (const m of photoMarkersRef.current) m.remove()
@@ -438,16 +458,35 @@ export function MapView({
         box.textContent = '📷'
       }
       el.appendChild(box)
-      el.title = 'Bild im Book zeigen'
+      el.title = photosDraggable
+        ? 'Bild im Book zeigen · Ziehen verschiebt die Position'
+        : 'Bild im Book zeigen'
+      let dragged = false
       el.addEventListener('click', (ev) => {
         ev.stopPropagation()
+        if (dragged) {
+          dragged = false
+          return
+        }
         onPhotoClickRef.current?.(pin.cardId, pin.imageId)
       })
       el.addEventListener('mouseenter', () => onPhotoHoverRef.current?.(pin.imageId))
       el.addEventListener('mouseleave', () => onPhotoHoverRef.current?.(null))
-      const marker = new Marker({ element: el, anchor: 'bottom' })
+      const marker = new Marker({ element: el, anchor: 'bottom', draggable: photosDraggable })
         .setLngLat([pin.lon, pin.lat])
         .addTo(map)
+      if (photosDraggable) {
+        marker.on('dragstart', () => {
+          dragged = true
+        })
+        marker.on('dragend', () => {
+          const ll = marker.getLngLat()
+          onPhotoMoveRef.current?.(pin.imageId, [
+            Math.round(ll.lng * 1e6) / 1e6,
+            Math.round(ll.lat * 1e6) / 1e6,
+          ])
+        })
+      }
       photoMarkersRef.current.push(marker)
       photoBoxesRef.current.set(pin.imageId, { el, box })
     }
@@ -456,7 +495,7 @@ export function MapView({
       photoMarkersRef.current = []
       photoBoxesRef.current.clear()
     }
-  }, [photos, ready])
+  }, [photos, ready, photosDraggable])
 
   // Hervorhebung des markierten Foto-Pins (grösser, blauer Ring, oben auf).
   useEffect(() => {
@@ -504,12 +543,12 @@ export function MapView({
     }
   }, [routeColor, ready])
 
-  // Fadenkreuz-Cursor im Editor-Modus.
+  // Fadenkreuz-Cursor im Editor- und «Position setzen»-Modus.
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    map.getCanvas().style.cursor = editor ? 'crosshair' : ''
-  }, [editor])
+    map.getCanvas().style.cursor = editor || placing ? 'crosshair' : ''
+  }, [editor, placing])
 
   // Übrige Touren schwach anzeigen.
   useEffect(() => {

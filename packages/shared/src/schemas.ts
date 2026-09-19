@@ -143,6 +143,9 @@ export const imageCreateSchema = z.object({
 export const imageUpdateSchema = z
   .object({
     caption: z.string().max(500).nullable(),
+    // Position manuell setzen/ändern/entfernen («Position auf der Karte setzen»).
+    lat: z.number().min(-90).max(90).nullable(),
+    lon: z.number().min(-180).max(180).nullable(),
     r2_key_display: z.string().nullable(),
     r2_key_thumb: z.string().nullable(),
     upload_state: uploadStateSchema,

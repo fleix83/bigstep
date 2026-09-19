@@ -1,5 +1,12 @@
 # Changelog
 
+## «Position auf der Karte setzen» (2026-09-19)
+
+- **Bildposition manuell setzen** (Desktop, Book-Modus, eigene Touren): 📍-Button auf jedem Karussell-Thumbnail (bei Hover) und unter dem grossen Bild der aufgeklappten Kachel startet den Modus — Fadenkreuz auf der Karte, Hinweisleiste oben; der nächste Kartenklick speichert die Position (`PATCH /api/images/:id` mit lat/lon, Schema erweitert um `lat`/`lon` nullable, +1 Test). Esc, «Abbrechen» oder Reiterwechsel brechen ab; «Position entfernen» löscht sie wieder.
+- **Foto-Pins sind ziehbar** (eigene Touren): Drag verschiebt die gespeicherte Position; ein Drag löst keinen Pin-Klick aus. Angezeigt wird die Position wie bisher auf die Route gesnappt (≤ 250 m).
+- Nach dem Setzen bleibt das Bild markiert (Pin hervorgehoben, Thumbnail mit Ring und GPS-Punkt). Hintergrund: Android-Fotos aus dem Browser-Picker haben oft keine GPS-EXIF-Daten (nur «geschätzte» Adresse in Google Fotos) — so lassen sich Bilder trotzdem auf der Route platzieren.
+- Verifiziert auf Produktion: Modus starten, Kartenklick → Pin auf der Route, Thumbnail-Ring/GPS-Punkt, Hover-Kopplung, Pin ziehbar, «Position entfernen» (Testposition wieder entfernt).
+
 ## Bugfix: Bild-Import auf Android (2026-09-18)
 
 - **Ursache:** exifr liefert bei defekten GPS-Tags (z. B. 0/0-Rationals mancher Android-Kameras) `NaN` für Breite/Länge; `typeof NaN === 'number'` liess das durch, JSON macht aus `NaN` `null`, und die API (`lat: z.number().optional()`) lehnte den Import ab — bisher still, seit dem Fehler-Banner sichtbar als «lat: expected number, received null».

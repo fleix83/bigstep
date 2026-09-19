@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   imageCreateSchema,
+  imageUpdateSchema,
   bboxSchema,
   cardsReorderSchema,
   lineStringSchema,
@@ -110,6 +111,12 @@ describe('imageCreateSchema', () => {
     expect(imageCreateSchema.safeParse(base).success).toBe(true)
     expect(imageCreateSchema.safeParse({ ...base, lat: null, lon: null }).success).toBe(true)
     expect(imageCreateSchema.safeParse({ ...base, taken_at: null }).success).toBe(true)
+  })
+
+  it('erlaubt das Setzen und Entfernen der Position per Update', () => {
+    expect(imageUpdateSchema.safeParse({ lat: 46.9, lon: 8.1 }).success).toBe(true)
+    expect(imageUpdateSchema.safeParse({ lat: null, lon: null }).success).toBe(true)
+    expect(imageUpdateSchema.safeParse({ lat: 100, lon: 8.1 }).success).toBe(false)
   })
 
   it('weist Koordinaten ausserhalb des gültigen Bereichs ab', () => {
