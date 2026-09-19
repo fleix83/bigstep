@@ -29,6 +29,13 @@
       "when": 1788286490216,
       "tag": "0003_tour_sharing",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789831321688,
+      "tag": "0004_tour_shares",
+      "breakpoints": true
     }
   ]
 }

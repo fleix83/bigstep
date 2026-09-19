@@ -1,4 +1,6 @@
 import {
+  boolean,
+  index,
   pgSchema,
   pgTable,
   primaryKey,
@@ -20,8 +22,10 @@ export const tours = pgTable('tours', {
   user_id: text('user_id').notNull(),
   name: text('name').notNull(),
   status: text('status').notNull().default('geplant'), // 'geplant' | 'gemacht'
-  // 'private' (nur Owner) | 'public' (alle angemeldeten User, read-only inkl. Book)
+  // 'private' (nur Owner + explizit geteilte User) | 'public' (alle angemeldeten User)
   visibility: text('visibility').notNull().default('private'),
+  // public: dürfen alle User auch bearbeiten (Book, Route)? Sonst read-only.
+  public_can_write: boolean('public_can_write').notNull().default(false),
   geometry: jsonb('geometry').$type<LineString>(),
   waypoints: jsonb('waypoints').$type<LonLat[]>(),
   distance_m: integer('distance_m'),
@@ -38,6 +42,28 @@ export const tours = pgTable('tours', {
     .defaultNow(),
   deleted_at: timestamp('deleted_at', { withTimezone: true, mode: 'string' }),
 })
+
+/**
+ * Freigaben an bestimmte User (per E-Mail aufgelöst → Neon-Auth-User-ID).
+ * can_write: Book und Route bearbeiten; sonst nur lesen.
+ */
+export const tourShares = pgTable(
+  'tour_shares',
+  {
+    tour_id: uuid('tour_id')
+      .notNull()
+      .references(() => tours.id),
+    user_id: text('user_id').notNull(),
+    can_write: boolean('can_write').notNull().default(true),
+    created_at: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.tour_id, t.user_id] }),
+    index('tour_shares_user_idx').on(t.user_id),
+  ]
+)
 
 export const cards = pgTable('cards', {
   id: uuid('id').primaryKey().defaultRandom(),

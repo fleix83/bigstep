@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { and, asc, desc, eq, isNull, max, ne, or, sql } from 'drizzle-orm'
-import { authUsers, cards, images, settings, tours } from '@tourenbuch/shared/db'
+import { authUsers, cards, images, settings, tourShares, tours } from '@tourenbuch/shared/db'
 import {
   cardCreateSchema,
   cardUpdateSchema,
@@ -10,6 +10,8 @@ import {
   imageUpdateSchema,
   settingPutSchema,
   tourCreateSchema,
+  tourShareCreateSchema,
+  tourShareUpdateSchema,
   tourUpdateSchema,
 } from '@tourenbuch/shared'
 import { getDb } from './db'
@@ -41,8 +43,7 @@ app.use(
 
 app.all('/neon-auth/*', async (c) => {
   const url = new URL(c.req.url)
-  const target =
-    c.env.NEON_AUTH_URL + url.pathname.replace(/^\/neon-auth/, '') + url.search
+  const target = c.env.NEON_AUTH_URL + url.pathname.replace(/^\/neon-auth/, '') + url.search
   const headers = new Headers(c.req.raw.headers)
   headers.delete('host')
   const upstream = await fetch(target, {
@@ -67,10 +68,7 @@ app.use('/api/*', async (c, next) => {
   const header = c.req.header('Authorization') ?? ''
   const token = header.startsWith('Bearer ') ? header.slice(7) : ''
   if (!token) {
-    return c.json(
-      { error: { code: 'unauthorized', message: 'Fehlendes Login-Token' } },
-      401
-    )
+    return c.json({ error: { code: 'unauthorized', message: 'Fehlendes Login-Token' } }, 401)
   }
   const userId = await verifyNeonAuthToken(c.env, token)
   c.set('userId', userId)
@@ -85,9 +83,7 @@ app.onError((err, c) => {
   return c.json({ error: { code: 'internal', message: 'Interner Fehler' } }, 500)
 })
 
-app.notFound((c) =>
-  c.json({ error: { code: 'not_found', message: 'Route nicht gefunden' } }, 404)
-)
+app.notFound((c) => c.json({ error: { code: 'not_found', message: 'Route nicht gefunden' } }, 404))
 
 async function readJson(c: { req: { json: () => Promise<unknown> } }): Promise<unknown> {
   try {
@@ -107,6 +103,32 @@ function idParam(raw: string): string {
 function stripDeleted<T extends { deleted_at?: unknown }>(row: T) {
   const { deleted_at: _omit, ...rest } = row
   return rest
+}
+
+// ---------------------------------------------------------------------------
+// Zugriffsmodell: Owner darf alles. Andere User lesen eine Tour, wenn sie
+// öffentlich (visibility=public) oder explizit an sie freigegeben ist
+// (tour_shares); schreiben (Book, Route) dürfen sie, wenn die Freigabe
+// can_write hat bzw. die öffentliche Tour public_can_write gesetzt hat.
+// Nur der Owner ändert Sichtbarkeit/Freigaben oder löscht die Tour.
+// ---------------------------------------------------------------------------
+
+/** SQL-Bedingung (auf `tours`): für den User lesbar. */
+function readableBy(userId: string) {
+  return or(
+    eq(tours.user_id, userId),
+    eq(tours.visibility, 'public'),
+    sql`exists (select 1 from ${tourShares} where ${tourShares.tour_id} = ${tours.id} and ${tourShares.user_id} = ${userId})`
+  )
+}
+
+/** SQL-Bedingung (auf `tours`): für den User beschreibbar. */
+function writableBy(userId: string) {
+  return or(
+    eq(tours.user_id, userId),
+    and(eq(tours.visibility, 'public'), eq(tours.public_can_write, true)),
+    sql`exists (select 1 from ${tourShares} where ${tourShares.tour_id} = ${tours.id} and ${tourShares.user_id} = ${userId} and ${tourShares.can_write})`
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -131,26 +153,34 @@ app.get('/api/tours', async (c) => {
 })
 
 /**
- * Öffentlich geteilte Touren anderer User (read-only, inkl. Book über die
- * normalen Card-/Image-Reads). Owner-Name aus dem Neon-Auth-Verzeichnis;
- * E-Mails bleiben bewusst aussen vor.
+ * Touren anderer User, die ich sehen darf: öffentlich geteilte plus explizit
+ * an mich freigegebene. `can_write` sagt dem Client, ob er Book/Route
+ * bearbeiten darf. Owner-Name aus dem Neon-Auth-Verzeichnis; E-Mails bleiben
+ * bewusst aussen vor.
  */
 app.get('/api/tours/shared', async (c) => {
   const db = getDb(c.env)
+  const userId = c.get('userId')
   const rows = await db
-    .select({ tour: tours, owner_name: authUsers.name })
+    .select({ tour: tours, owner_name: authUsers.name, share_can_write: tourShares.can_write })
     .from(tours)
     .leftJoin(authUsers, sql`${authUsers.id}::text = ${tours.user_id}`)
+    .leftJoin(tourShares, and(eq(tourShares.tour_id, tours.id), eq(tourShares.user_id, userId)))
     .where(
       and(
         isNull(tours.deleted_at),
-        eq(tours.visibility, 'public'),
-        ne(tours.user_id, c.get('userId'))
+        ne(tours.user_id, userId),
+        or(eq(tours.visibility, 'public'), sql`${tourShares.user_id} is not null`)
       )
     )
     .orderBy(desc(tours.updated_at))
   return c.json(
-    rows.map((r) => ({ ...stripDeleted(r.tour), owner_name: r.owner_name ?? null }))
+    rows.map((r) => ({
+      ...stripDeleted(r.tour),
+      owner_name: r.owner_name ?? null,
+      can_write:
+        r.share_can_write === true || (r.tour.visibility === 'public' && r.tour.public_can_write),
+    }))
   )
 })
 
@@ -169,11 +199,19 @@ app.patch('/api/tours/:id', async (c) => {
   const id = idParam(c.req.param('id'))
   const body = validate(tourUpdateSchema, await readJson(c))
   const db = getDb(c.env)
+  const userId = c.get('userId')
+  // Sichtbarkeit/«alle dürfen bearbeiten» darf nur der Owner ändern; den Rest
+  // (Name, Status, Route, Kennzahlen) auch User mit Schreibrecht.
+  const ownerOnly = body.visibility !== undefined || body.public_can_write !== undefined
   const [row] = await db
     .update(tours)
     .set({ ...body, updated_at: sql`now()` })
     .where(
-      and(eq(tours.id, id), isNull(tours.deleted_at), eq(tours.user_id, c.get('userId')))
+      and(
+        eq(tours.id, id),
+        isNull(tours.deleted_at),
+        ownerOnly ? eq(tours.user_id, userId) : writableBy(userId)
+      )
     )
     .returning()
   if (!row) throw new ApiError(404, 'not_found', 'Tour nicht gefunden')
@@ -187,9 +225,7 @@ app.delete('/api/tours/:id', async (c) => {
   const [row] = await db
     .update(tours)
     .set({ deleted_at: sql`now()` })
-    .where(
-      and(eq(tours.id, id), isNull(tours.deleted_at), eq(tours.user_id, c.get('userId')))
-    )
+    .where(and(eq(tours.id, id), isNull(tours.deleted_at), eq(tours.user_id, c.get('userId'))))
     .returning({ id: tours.id })
   if (!row) throw new ApiError(404, 'not_found', 'Tour nicht gefunden')
   await db
@@ -200,10 +236,10 @@ app.delete('/api/tours/:id', async (c) => {
 })
 
 // ---------------------------------------------------------------------------
-// Cards
+// Freigaben an bestimmte User (nur Owner)
 // ---------------------------------------------------------------------------
 
-async function requireTour(db: ReturnType<typeof getDb>, tourId: string, userId: string) {
+async function requireOwner(db: ReturnType<typeof getDb>, tourId: string, userId: string) {
   const [row] = await db
     .select({ id: tours.id })
     .from(tours)
@@ -211,39 +247,122 @@ async function requireTour(db: ReturnType<typeof getDb>, tourId: string, userId:
   if (!row) throw new ApiError(404, 'not_found', 'Tour nicht gefunden')
 }
 
-/** Lesezugriff: eigene Tour ODER öffentlich geteilte Tour eines anderen Users. */
-async function requireTourRead(
-  db: ReturnType<typeof getDb>,
-  tourId: string,
-  userId: string
-) {
+async function listShares(db: ReturnType<typeof getDb>, tourId: string) {
+  return db
+    .select({
+      user_id: tourShares.user_id,
+      can_write: tourShares.can_write,
+      name: authUsers.name,
+      email: authUsers.email,
+    })
+    .from(tourShares)
+    .leftJoin(authUsers, sql`${authUsers.id}::text = ${tourShares.user_id}`)
+    .where(eq(tourShares.tour_id, tourId))
+    .orderBy(asc(tourShares.created_at))
+}
+
+app.get('/api/tours/:id/shares', async (c) => {
+  const id = idParam(c.req.param('id'))
+  const db = getDb(c.env)
+  await requireOwner(db, id, c.get('userId'))
+  return c.json(await listShares(db, id))
+})
+
+/** Freigabe per E-Mail: der User muss ein Konto in Neon Auth haben. */
+app.post('/api/tours/:id/shares', async (c) => {
+  const id = idParam(c.req.param('id'))
+  const body = validate(tourShareCreateSchema, await readJson(c))
+  const db = getDb(c.env)
+  const userId = c.get('userId')
+  await requireOwner(db, id, userId)
+  const [target] = await db
+    .select({ id: authUsers.id, name: authUsers.name, email: authUsers.email })
+    .from(authUsers)
+    .where(sql`lower(${authUsers.email}) = ${body.email}`)
+  if (!target) {
+    throw new ApiError(404, 'not_found', 'Kein Konto mit dieser E-Mail-Adresse')
+  }
+  const targetId = String(target.id)
+  if (targetId === userId) {
+    throw new ApiError(400, 'validation_error', 'Das ist dein eigenes Konto')
+  }
+  const canWrite = body.can_write ?? true
+  await db
+    .insert(tourShares)
+    .values({ tour_id: id, user_id: targetId, can_write: canWrite })
+    .onConflictDoUpdate({
+      target: [tourShares.tour_id, tourShares.user_id],
+      set: { can_write: canWrite },
+    })
+  return c.json(
+    { user_id: targetId, name: target.name, email: target.email, can_write: canWrite },
+    201
+  )
+})
+
+app.patch('/api/tours/:id/shares/:userId', async (c) => {
+  const id = idParam(c.req.param('id'))
+  const shareUser = idParam(c.req.param('userId'))
+  const body = validate(tourShareUpdateSchema, await readJson(c))
+  const db = getDb(c.env)
+  await requireOwner(db, id, c.get('userId'))
+  const [row] = await db
+    .update(tourShares)
+    .set({ can_write: body.can_write })
+    .where(and(eq(tourShares.tour_id, id), eq(tourShares.user_id, shareUser)))
+    .returning({ user_id: tourShares.user_id })
+  if (!row) throw new ApiError(404, 'not_found', 'Freigabe nicht gefunden')
+  const share = (await listShares(db, id)).find((s) => s.user_id === shareUser)
+  return c.json(share)
+})
+
+app.delete('/api/tours/:id/shares/:userId', async (c) => {
+  const id = idParam(c.req.param('id'))
+  const shareUser = idParam(c.req.param('userId'))
+  const db = getDb(c.env)
+  await requireOwner(db, id, c.get('userId'))
+  const [row] = await db
+    .delete(tourShares)
+    .where(and(eq(tourShares.tour_id, id), eq(tourShares.user_id, shareUser)))
+    .returning({ user_id: tourShares.user_id })
+  if (!row) throw new ApiError(404, 'not_found', 'Freigabe nicht gefunden')
+  return c.body(null, 204)
+})
+
+// ---------------------------------------------------------------------------
+// Cards
+// ---------------------------------------------------------------------------
+
+/** Schreibzugriff auf die Tour (Owner oder Freigabe/public mit Schreibrecht). */
+async function requireTour(db: ReturnType<typeof getDb>, tourId: string, userId: string) {
   const [row] = await db
     .select({ id: tours.id })
     .from(tours)
-    .where(
-      and(
-        eq(tours.id, tourId),
-        isNull(tours.deleted_at),
-        or(eq(tours.user_id, userId), eq(tours.visibility, 'public'))
-      )
-    )
+    .where(and(eq(tours.id, tourId), isNull(tours.deleted_at), writableBy(userId)))
   if (!row) throw new ApiError(404, 'not_found', 'Tour nicht gefunden')
 }
 
-/** Card muss existieren und über ihre Tour dem User gehören. */
+/** Lesezugriff: eigene, öffentliche oder an mich freigegebene Tour. */
+async function requireTourRead(db: ReturnType<typeof getDb>, tourId: string, userId: string) {
+  const [row] = await db
+    .select({ id: tours.id })
+    .from(tours)
+    .where(and(eq(tours.id, tourId), isNull(tours.deleted_at), readableBy(userId)))
+  if (!row) throw new ApiError(404, 'not_found', 'Tour nicht gefunden')
+}
+
+/** Card muss existieren und ihre Tour für den User beschreibbar sein. */
 async function requireCard(db: ReturnType<typeof getDb>, cardId: string, userId: string) {
   const [row] = await db
     .select({ id: cards.id })
     .from(cards)
     .innerJoin(tours, eq(cards.tour_id, tours.id))
-    .where(
-      and(eq(cards.id, cardId), isNull(cards.deleted_at), eq(tours.user_id, userId))
-    )
+    .where(and(eq(cards.id, cardId), isNull(cards.deleted_at), writableBy(userId)))
   if (!row) throw new ApiError(404, 'not_found', 'Card nicht gefunden')
 }
 
-/** true, wenn der User ein Bild mit dieser sha256 besitzt (Kette images→cards→tours). */
-async function userOwnsSha(
+/** true, wenn ein Bild mit dieser sha256 an einer für den User beschreibbaren Tour hängt. */
+async function shaWritable(
   db: ReturnType<typeof getDb>,
   sha: string,
   userId: string
@@ -253,11 +372,11 @@ async function userOwnsSha(
     .from(images)
     .innerJoin(cards, eq(images.card_id, cards.id))
     .innerJoin(tours, eq(cards.tour_id, tours.id))
-    .where(and(eq(images.sha256, sha), eq(tours.user_id, userId)))
+    .where(and(eq(images.sha256, sha), writableBy(userId)))
   return rows.length > 0
 }
 
-/** Bild lesbar: gehört dem User oder hängt an einer öffentlich geteilten Tour. */
+/** Bild lesbar: hängt an einer für den User lesbaren Tour. */
 async function shaReadable(
   db: ReturnType<typeof getDb>,
   sha: string,
@@ -268,12 +387,7 @@ async function shaReadable(
     .from(images)
     .innerJoin(cards, eq(images.card_id, cards.id))
     .innerJoin(tours, eq(cards.tour_id, tours.id))
-    .where(
-      and(
-        eq(images.sha256, sha),
-        or(eq(tours.user_id, userId), eq(tours.visibility, 'public'))
-      )
-    )
+    .where(and(eq(images.sha256, sha), readableBy(userId)))
   return rows.length > 0
 }
 
@@ -397,7 +511,7 @@ app.patch('/api/images/:id', async (c) => {
     .from(images)
     .innerJoin(cards, eq(images.card_id, cards.id))
     .innerJoin(tours, eq(cards.tour_id, tours.id))
-    .where(and(eq(images.id, id), eq(tours.user_id, c.get('userId'))))
+    .where(and(eq(images.id, id), writableBy(c.get('userId'))))
   if (!owned) throw new ApiError(404, 'not_found', 'Bild nicht gefunden')
   const [row] = await db.update(images).set(body).where(eq(images.id, id)).returning()
   if (!row) throw new ApiError(404, 'not_found', 'Bild nicht gefunden')
@@ -412,7 +526,7 @@ app.delete('/api/images/:id', async (c) => {
     .from(images)
     .innerJoin(cards, eq(images.card_id, cards.id))
     .innerJoin(tours, eq(cards.tour_id, tours.id))
-    .where(and(eq(images.id, id), eq(tours.user_id, c.get('userId'))))
+    .where(and(eq(images.id, id), writableBy(c.get('userId'))))
   if (!owned) throw new ApiError(404, 'not_found', 'Bild nicht gefunden')
   const [row] = await db
     .delete(images)
@@ -470,7 +584,8 @@ app.get('/api/images', async (c) => {
     .where(
       and(
         isNull(cards.deleted_at),
-        eq(tours.user_id, c.get('userId')),
+        // auch Bilder fremder Touren mit Schreibrecht (dort importiert → hier hochladen)
+        writableBy(c.get('userId')),
         ...(state ? [eq(images.upload_state, state)] : [])
       )
     )
@@ -484,7 +599,7 @@ app.put('/api/images/:sha256/:variant', async (c) => {
   if (!contentType.startsWith('image/')) {
     throw new ApiError(400, 'validation_error', 'Content-Type muss image/* sein')
   }
-  if (!(await userOwnsSha(getDb(c.env), sha, c.get('userId')))) {
+  if (!(await shaWritable(getDb(c.env), sha, c.get('userId')))) {
     throw new ApiError(404, 'not_found', 'Kein Bild mit dieser sha256 im Konto')
   }
   const body = await c.req.arrayBuffer()

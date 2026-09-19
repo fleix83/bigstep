@@ -11,6 +11,7 @@ import { ApiProvider, useApi, useApiConfig, useAuthInfo } from './lib/api'
 import { saveTextFile } from './lib/save-file'
 import { TourList } from './components/TourList'
 import { SettingsDialog } from './components/SettingsDialog'
+import { ShareDialog } from './components/ShareDialog'
 import { MapView } from './components/MapView'
 import { ImportDialog, type ImportCandidate } from './components/ImportDialog'
 import { BookView } from './components/BookView'
@@ -45,6 +46,7 @@ function Shell() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('karte')
   const [showSettings, setShowSettings] = useState(false)
+  const [showShare, setShowShare] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [preview, setPreview] = useState<ImportCandidate | null>(null)
   const { config, updateConfig } = useApiConfig()
@@ -55,15 +57,17 @@ function Shell() {
   const { data: sharedTours } = useSharedTours()
   const selectedTour =
     tours?.find((t) => t.id === selectedId) ?? sharedTours?.find((t) => t.id === selectedId) ?? null
-  // Fremde (geteilte) Touren sind strikt read-only, eigene editierbar.
+  // Owner darf alles; fremde Touren sind editierbar, wenn die Freigabe Schreibrecht hat.
   const isOwner = selectedTour === null || selectedTour.user_id === user.id
+  const canWrite: boolean =
+    isOwner || (selectedTour as { can_write?: boolean } | null)?.can_write === true
   const readOnly = useReadOnly()
   // Auch die mobile PWA editiert jetzt das Book — die Upload-Queue muss dort
   // ebenfalls laufen, damit frisch importierte Bilder nach R2 kommen.
   const uploadStatus = useUploadQueue(config !== null)
   const [fullscreen, setFullscreen] = useState(false)
   const [editing, setEditing] = useState(false)
-  const editor = useRouteEditor(selectedTour, editing && !readOnly && isOwner && tab === 'karte')
+  const editor = useRouteEditor(selectedTour, editing && !readOnly && canWrite && tab === 'karte')
   const [highlightCardId, setHighlightCardId] = useState<string | null>(null)
   // Bild ↔ Foto-Pin: Hover ist flüchtig, Klick auf einen Pin bleibt markiert.
   const [hoverImageId, setHoverImageId] = useState<string | null>(null)
@@ -269,24 +273,19 @@ function Shell() {
                       ? 'border-green-300 bg-green-50 text-green-700'
                       : 'border-gray-300 text-gray-500 hover:bg-gray-100'
                   }`}
-                  title={
-                    selectedTour.visibility === 'public'
-                      ? 'Für alle User sichtbar – klicken, um wieder privat zu machen'
-                      : 'Tour (inkl. Book) für alle User der App sichtbar machen'
-                  }
-                  onClick={() => {
-                    void api
-                      .updateTour(selectedTour.id, {
-                        visibility: selectedTour.visibility === 'public' ? 'private' : 'public',
-                      })
-                      .then(() => queryClient.invalidateQueries({ queryKey: ['tours'] }))
-                  }}
+                  title="Tour teilen: für alle oder für bestimmte Personen, mit oder ohne Schreibrecht"
+                  onClick={() => setShowShare(true)}
                 >
                   {selectedTour.visibility === 'public' ? '🌍 Geteilt' : 'Teilen'}
                 </button>
               ) : !isOwner ? (
-                <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-500">
-                  🌍 geteilt
+                <span
+                  className="shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-500"
+                  title={
+                    canWrite ? 'Geteilte Tour – du darfst bearbeiten' : 'Geteilte Tour – nur lesen'
+                  }
+                >
+                  {canWrite ? '✎ geteilt' : '🌍 geteilt'}
                 </span>
               ) : null}
               <span className="truncate text-sm text-gray-400 md:max-w-48">
@@ -320,7 +319,7 @@ function Shell() {
               if (placingImageId) void saveImagePosition(placingImageId, lonLat)
             }}
             onPhotoMove={
-              isOwner && !readOnly ? (id, lonLat) => void saveImagePosition(id, lonLat) : undefined
+              canWrite && !readOnly ? (id, lonLat) => void saveImagePosition(id, lonLat) : undefined
             }
             fullscreen={fullscreen}
             onToggleFullscreen={() => setFullscreen((f) => !f)}
@@ -328,7 +327,7 @@ function Shell() {
           />
 
           {/* Editor-Toolbar */}
-          {!readOnly && isOwner && tab === 'karte' && selectedTour && (
+          {!readOnly && canWrite && tab === 'karte' && selectedTour && (
             <div
               className={`absolute left-14 top-2 z-10 flex items-center gap-1 rounded-lg border border-gray-200 bg-white/95 px-2 py-1.5 shadow-md ${fullscreen ? '' : 'md:left-[22.75rem] md:top-[3.875rem]'}`}
             >
@@ -416,7 +415,7 @@ function Shell() {
                 tourName={selectedTour.name}
                 highlightCardId={highlightCardId}
                 onHighlightDone={() => setHighlightCardId(null)}
-                readOnly={!isOwner}
+                readOnly={!canWrite}
                 highlightImageId={highlightImageId}
                 onImageHover={setHoverImageId}
                 placingImageId={placingImageId}
@@ -462,8 +461,8 @@ function Shell() {
                   tourName={selectedTour.name}
                   highlightCardId={highlightCardId}
                   onHighlightDone={() => setHighlightCardId(null)}
-                  // Book ist auch mobil editierbar; nur fremde Touren sind read-only.
-                  readOnly={!isOwner}
+                  // Book ist auch mobil editierbar; fremde Touren nur mit Schreibrecht.
+                  readOnly={!canWrite}
                 />
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-gray-500">
@@ -474,6 +473,10 @@ function Shell() {
           )}
         </div>
       </main>
+
+      {showShare && selectedTour && isOwner && (
+        <ShareDialog tour={selectedTour} onClose={() => setShowShare(false)} />
+      )}
 
       {showSettings && (
         <SettingsDialog

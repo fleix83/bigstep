@@ -16,6 +16,7 @@ const validTour = {
   name: 'Basel – Chrischona',
   status: 'geplant',
   visibility: 'private',
+  public_can_write: false,
   geometry: {
     type: 'LineString',
     coordinates: [

@@ -1,5 +1,13 @@
 # Changelog
 
+## Teilen mit bestimmten Personen + Schreibrecht (2026-09-19)
+
+- **Ursache des «Upload-Bugs» auf Mobile:** Die Kollegin arbeitete in einer öffentlich geteilten Tour — die war bisher strikt read-only, jede Schreiboperation lieferte 404.
+- **Neues Zugriffsmodell:** Owner darf alles. Andere User lesen eine Tour, wenn sie öffentlich ist oder explizit an sie freigegeben wurde (`tour_shares`, Migration `drizzle/0004_tour_shares.sql`, auf production- und test-Branch per SQL eingespielt); **schreiben** (Book: Kacheln, Bilder, R2-Upload, Bildposition; Route, Name, Status) dürfen sie mit Freigabe `can_write` bzw. wenn die öffentliche Tour `tours.public_can_write` gesetzt hat. Sichtbarkeit, Freigaben und Löschen bleiben beim Owner (PATCH mit `visibility`/`public_can_write` nur als Owner). Die Upload-Queue listet auch pending-Bilder fremder Touren mit Schreibrecht, damit auf einem Zweitgerät importierte Bilder nach R2 kommen.
+- **API:** `GET /api/tours/shared` liefert öffentliche + an mich freigegebene Touren mit `can_write`; `GET/POST/PATCH/DELETE /api/tours/:id/shares[/:userId]` (Owner) — Freigabe per E-Mail wird über das Neon-Auth-Verzeichnis zur User-ID aufgelöst (404 «Kein Konto mit dieser E-Mail-Adresse», 400 bei eigenem Konto; Upsert; Schreibrecht default an). 6 neue API-Tests (User C wird dafür im Neon-Auth-Verzeichnis des Test-Branches angelegt) — 46 API-Tests, 86 gesamt.
+- **UI:** Der «Teilen»-Knopf öffnet einen Dialog mit 1) «Für alle User der App» + «Alle dürfen bearbeiten» und 2) «Bestimmte Personen» (E-Mail hinzufügen, Liste mit «bearbeiten»-Schalter und Entfernen). Geteilte Touren zeigen in der Liste «· ✎ bearbeitbar», in der Nav «✎ geteilt» statt «🌍 geteilt». Editier-Controls (Book, Route-Editor, Pins ziehen) folgen `can_write` statt nur Owner.
+- Hinweis: `drizzle-kit migrate` funktioniert auf diesen Branches nicht (nur 0000 ist in `drizzle.__drizzle_migrations` registriert); Migrationen werden statement-weise per SQL eingespielt.
+
 ## iPad: Layout im Book-Modus, Bild-Import auf Safari (2026-09-19)
 
 - **Bild-Import auf iPad/iPhone-Safari scheiterte an OPFS:** Safari bis Version 25 kann OPFS lesen, hat aber kein `createWritable()` auf Datei-Handles (erst Safari 26) — das Speichern der Ableitungen warf, der Import blieb hängen. Der Browser-Store nutzt jetzt OPFS nur, wenn es schreibbar ist, sonst **IndexedDB** (`tourenbuch-images`); Lesen prüft OPFS und IndexedDB, damit bestehende Bilder erhalten bleiben. (Der Store-Teil war bereits im vorherigen Commit mitgerutscht.)

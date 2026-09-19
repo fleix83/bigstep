@@ -1,9 +1,4 @@
-import {
-  createLocalJWKSet,
-  createRemoteJWKSet,
-  jwtVerify,
-  type JWTVerifyGetKey,
-} from 'jose'
+import { createLocalJWKSet, createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose'
 import type { Env } from './env'
 import { ApiError } from './errors'
 

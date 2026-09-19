@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { neon } from '@neondatabase/serverless'
 import { SignJWT, exportJWK, generateKeyPair } from 'jose'
 import type { Card, Tour } from '@tourenbuch/shared'
@@ -16,6 +16,7 @@ const USER_A = 'user-a-1111'
 const USER_B = 'user-b-2222'
 let TOKEN = '' // JWT für USER_A (Default in req())
 let TOKEN_B = ''
+let signToken: (sub: string) => Promise<string>
 
 /** In-Memory-Ersatz für das R2-Binding (nur die genutzten Methoden). */
 class MemR2 {
@@ -64,6 +65,7 @@ async function initTestAuth() {
       .setIssuedAt()
       .setExpirationTime('15m')
       .sign(privateKey)
+  signToken = sign
   TOKEN = await sign(USER_A)
   TOKEN_B = await sign(USER_B)
 }
@@ -91,6 +93,7 @@ describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
     const sql = neon(TEST_DATABASE_URL!)
     await sql`delete from images`
     await sql`delete from cards`
+    await sql`delete from tour_shares`
     await sql`delete from tours`
     await sql`delete from settings`
   })
@@ -116,9 +119,7 @@ describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
     })
 
     it('User-Isolation: User B sieht die Touren von User A nicht', async () => {
-      const created = (await (
-        await req('POST', '/api/tours', { name: 'Privat A' })
-      ).json()) as Tour
+      const created = (await (await req('POST', '/api/tours', { name: 'Privat A' })).json()) as Tour
       const listB = (await (await req('GET', '/api/tours', undefined, TOKEN_B)).json()) as Tour[]
       expect(listB.some((t) => t.id === created.id)).toBe(false)
       const patchB = await req('PATCH', `/api/tours/${created.id}`, { name: 'geklaut' }, TOKEN_B)
@@ -342,9 +343,7 @@ describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
     it('DELETE /api/images/:id entfernt die Zeile', async () => {
       const res = await req('DELETE', `/api/images/${imageId}`)
       expect(res.status).toBe(204)
-      const rows = (await (
-        await req('GET', `/api/tours/${tourId}/images`)
-      ).json()) as unknown[]
+      const rows = (await (await req('GET', `/api/tours/${tourId}/images`)).json()) as unknown[]
       expect(rows).toHaveLength(0)
     })
   })
@@ -369,9 +368,7 @@ describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
     }
 
     beforeAll(async () => {
-      const tour = (await (
-        await req('POST', '/api/tours', { name: 'R2-Testtour' })
-      ).json()) as Tour
+      const tour = (await (await req('POST', '/api/tours', { name: 'R2-Testtour' })).json()) as Tour
       const card = (await (
         await req('POST', '/api/cards', { tour_id: tour.id, title: 'R2' })
       ).json()) as Card
@@ -415,16 +412,17 @@ describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
     it('r2-cleanup listet Waisen im Dry-Run und löscht mit dry=0', async () => {
       // Waise direkt in R2 ablegen (über die API ist das nicht mehr möglich).
       await memR2.put(`images/${ORPHAN_SHA}/thumb`, bytes.buffer as ArrayBuffer)
-      const dry = (await (
-        await req('POST', '/api/admin/r2-cleanup')
-      ).json()) as { dryRun: boolean; orphans: string[] }
+      const dry = (await (await req('POST', '/api/admin/r2-cleanup')).json()) as {
+        dryRun: boolean
+        orphans: string[]
+      }
       expect(dry.dryRun).toBe(true)
       expect(dry.orphans).toContain(`images/${ORPHAN_SHA}/thumb`)
       expect(dry.orphans).not.toContain(`images/${SHA}/display`)
 
-      const real = (await (
-        await req('POST', '/api/admin/r2-cleanup?dry=0')
-      ).json()) as { orphans: string[] }
+      const real = (await (await req('POST', '/api/admin/r2-cleanup?dry=0')).json()) as {
+        orphans: string[]
+      }
       expect(real.orphans).toContain(`images/${ORPHAN_SHA}/thumb`)
       expect((await req('GET', `/api/images/${ORPHAN_SHA}/thumb`)).status).toBe(404)
     })
@@ -514,9 +512,9 @@ describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
         (await req('PATCH', `/api/tours/${tourId}`, { name: 'gekapert' }, TOKEN_B)).status
       ).toBe(404)
       expect((await req('POST', '/api/cards', { tour_id: tourId }, TOKEN_B)).status).toBe(404)
-      expect(
-        (await req('PATCH', `/api/cards/${cardId}`, { title: 'fremd' }, TOKEN_B)).status
-      ).toBe(404)
+      expect((await req('PATCH', `/api/cards/${cardId}`, { title: 'fremd' }, TOKEN_B)).status).toBe(
+        404
+      )
       expect((await req('DELETE', `/api/cards/${cardId}`, undefined, TOKEN_B)).status).toBe(404)
       expect((await putVariantAs(TOKEN_B)).status).toBe(404)
     })
@@ -525,6 +523,156 @@ describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
       await req('PATCH', `/api/tours/${tourId}`, { visibility: 'private' })
       expect((await req('GET', `/api/tours/${tourId}/cards`, undefined, TOKEN_B)).status).toBe(404)
       expect((await req('GET', `/api/images/${SHA}/display`, undefined, TOKEN_B)).status).toBe(404)
+    })
+  })
+
+  describe('Sharing per User (tour_shares) und public_can_write', () => {
+    // User C existiert (anders als A/B) im Neon-Auth-Verzeichnis des Test-Branches,
+    // damit die Freigabe per E-Mail aufgelöst werden kann.
+    const USER_C = '3b0f5a6e-6c1d-4b8e-9f2a-7d4c5e6f8a90'
+    const EMAIL_C = 'kollegin-c@test.local'
+    let TOKEN_C = ''
+    let tourId: string
+    let cardId: string
+    const SHA = 'e'.repeat(64)
+    const sql = neon(TEST_DATABASE_URL!)
+
+    beforeAll(async () => {
+      TOKEN_C = await signToken(USER_C)
+      await sql`insert into neon_auth."user" (id, name, email, "emailVerified")
+        values (${USER_C}, 'Kollegin C', ${EMAIL_C}, true)
+        on conflict (id) do update set email = excluded.email, name = excluded.name`
+      const tour = (await (
+        await req('POST', '/api/tours', { name: 'Tour mit Freigabe' })
+      ).json()) as Tour
+      tourId = tour.id
+      const card = (await (
+        await req('POST', '/api/cards', { tour_id: tourId, title: 'Owner-Card' })
+      ).json()) as Card
+      cardId = card.id
+    })
+
+    afterAll(async () => {
+      await sql`delete from tour_shares where user_id = ${USER_C}`
+      await sql`delete from neon_auth."user" where id = ${USER_C}`
+    })
+
+    it('Freigabe an unbekannte E-Mail → 404, nur der Owner darf freigeben', async () => {
+      const unknown = await req('POST', `/api/tours/${tourId}/shares`, {
+        email: 'niemand@test.local',
+      })
+      expect(unknown.status).toBe(404)
+      const byB = await req('POST', `/api/tours/${tourId}/shares`, { email: EMAIL_C }, TOKEN_B)
+      expect(byB.status).toBe(404)
+    })
+
+    it('Owner gibt per E-Mail frei (Schreibrecht default), C sieht die Tour, B nicht', async () => {
+      const res = await req('POST', `/api/tours/${tourId}/shares`, { email: EMAIL_C.toUpperCase() })
+      expect(res.status).toBe(201)
+      const share = (await res.json()) as { user_id: string; can_write: boolean; email: string }
+      expect(share.user_id).toBe(USER_C)
+      expect(share.can_write).toBe(true)
+
+      const list = (await (await req('GET', `/api/tours/${tourId}/shares`)).json()) as {
+        user_id: string
+        name: string | null
+      }[]
+      expect(list.map((s) => s.user_id)).toEqual([USER_C])
+      expect(list[0]!.name).toBe('Kollegin C')
+
+      const sharedC = (await (
+        await req('GET', '/api/tours/shared', undefined, TOKEN_C)
+      ).json()) as (Tour & { can_write: boolean })[]
+      const found = sharedC.find((t) => t.id === tourId)
+      expect(found?.can_write).toBe(true)
+      const sharedB = (await (
+        await req('GET', '/api/tours/shared', undefined, TOKEN_B)
+      ).json()) as Tour[]
+      expect(sharedB.some((t) => t.id === tourId)).toBe(false)
+      expect((await req('GET', `/api/tours/${tourId}/cards`, undefined, TOKEN_B)).status).toBe(404)
+    })
+
+    it('C darf Book und Route bearbeiten, aber nicht Sichtbarkeit/Freigaben/Löschen', async () => {
+      const card = await req('POST', `/api/cards`, { tour_id: tourId, kind: 'images' }, TOKEN_C)
+      expect(card.status).toBe(201)
+      const cardC = (await card.json()) as Card
+      const img = await req('POST', '/api/images', { card_id: cardC.id, sha256: SHA }, TOKEN_C)
+      expect(img.status).toBe(201)
+      const put = await app.request(
+        `/api/images/${SHA}/thumb`,
+        {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${TOKEN_C}`, 'Content-Type': 'image/webp' },
+          body: new Uint8Array([1, 2, 3]),
+        },
+        env
+      )
+      expect(put.status).toBe(200)
+      // Pending-Liste der Upload-Queue enthält das von C importierte Bild.
+      const pending = (await (
+        await req('GET', '/api/images?state=pending', undefined, TOKEN_C)
+      ).json()) as { sha256: string }[]
+      expect(pending.some((i) => i.sha256 === SHA)).toBe(true)
+      expect(
+        (await req('PATCH', `/api/cards/${cardId}`, { title: 'von C ergänzt' }, TOKEN_C)).status
+      ).toBe(200)
+      expect(
+        (await req('PATCH', `/api/tours/${tourId}`, { name: 'Umbenannt von C' }, TOKEN_C)).status
+      ).toBe(200)
+      expect(
+        (await req('PATCH', `/api/tours/${tourId}`, { visibility: 'public' }, TOKEN_C)).status
+      ).toBe(404)
+      expect((await req('DELETE', `/api/tours/${tourId}`, undefined, TOKEN_C)).status).toBe(404)
+      expect((await req('GET', `/api/tours/${tourId}/shares`, undefined, TOKEN_C)).status).toBe(404)
+      // Owner sieht die von C angelegte Card.
+      const cards = (await (await req('GET', `/api/tours/${tourId}/cards`)).json()) as Card[]
+      expect(cards.some((c) => c.id === cardC.id)).toBe(true)
+    })
+
+    it('Schreibrecht entziehen → C nur noch lesend', async () => {
+      const res = await req('PATCH', `/api/tours/${tourId}/shares/${USER_C}`, { can_write: false })
+      expect(res.status).toBe(200)
+      expect(((await res.json()) as { can_write: boolean }).can_write).toBe(false)
+      expect((await req('GET', `/api/tours/${tourId}/cards`, undefined, TOKEN_C)).status).toBe(200)
+      expect((await req('POST', '/api/cards', { tour_id: tourId }, TOKEN_C)).status).toBe(404)
+      expect((await req('PATCH', `/api/tours/${tourId}`, { name: 'x' }, TOKEN_C)).status).toBe(404)
+      const sharedC = (await (
+        await req('GET', '/api/tours/shared', undefined, TOKEN_C)
+      ).json()) as (Tour & { can_write: boolean })[]
+      expect(sharedC.find((t) => t.id === tourId)?.can_write).toBe(false)
+    })
+
+    it('Freigabe entfernen → C verliert den Zugriff', async () => {
+      expect((await req('DELETE', `/api/tours/${tourId}/shares/${USER_C}`)).status).toBe(204)
+      expect((await req('GET', `/api/tours/${tourId}/cards`, undefined, TOKEN_C)).status).toBe(404)
+      const sharedC = (await (
+        await req('GET', '/api/tours/shared', undefined, TOKEN_C)
+      ).json()) as Tour[]
+      expect(sharedC.some((t) => t.id === tourId)).toBe(false)
+      expect((await req('DELETE', `/api/tours/${tourId}/shares/${USER_C}`)).status).toBe(404)
+    })
+
+    it('public_can_write: alle User dürfen bearbeiten, bis der Owner es zurücknimmt', async () => {
+      const on = await req('PATCH', `/api/tours/${tourId}`, {
+        visibility: 'public',
+        public_can_write: true,
+      })
+      expect(on.status).toBe(200)
+      const sharedB = (await (
+        await req('GET', '/api/tours/shared', undefined, TOKEN_B)
+      ).json()) as (Tour & { can_write: boolean })[]
+      expect(sharedB.find((t) => t.id === tourId)?.can_write).toBe(true)
+      expect((await req('POST', '/api/cards', { tour_id: tourId }, TOKEN_B)).status).toBe(201)
+      // B darf trotzdem weder Sichtbarkeit ändern noch löschen
+      expect(
+        (await req('PATCH', `/api/tours/${tourId}`, { public_can_write: false }, TOKEN_B)).status
+      ).toBe(404)
+      expect((await req('DELETE', `/api/tours/${tourId}`, undefined, TOKEN_B)).status).toBe(404)
+
+      await req('PATCH', `/api/tours/${tourId}`, { public_can_write: false })
+      expect((await req('POST', '/api/cards', { tour_id: tourId }, TOKEN_B)).status).toBe(404)
+      expect((await req('GET', `/api/tours/${tourId}/cards`, undefined, TOKEN_B)).status).toBe(200)
+      await req('PATCH', `/api/tours/${tourId}`, { visibility: 'private' })
     })
   })
 

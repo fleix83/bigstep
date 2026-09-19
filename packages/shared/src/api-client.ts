@@ -4,6 +4,7 @@ import {
   imageSchema,
   sharedTourSchema,
   tourSchema,
+  tourShareSchema,
   type Card,
   type CardCreate,
   type CardUpdate,
@@ -11,6 +12,9 @@ import {
   type ImageCreate,
   type ImageUpdate,
   type SharedTour,
+  type TourShare,
+  type TourShareCreate,
+  type TourShareUpdate,
   type Tour,
   type TourCreate,
   type TourUpdate,
@@ -93,6 +97,20 @@ export class ApiClient {
     return this.request('DELETE', `/api/tours/${id}`, null)
   }
 
+  // Freigaben an bestimmte User (Owner)
+  listTourShares(tourId: string): Promise<TourShare[]> {
+    return this.request('GET', `/api/tours/${tourId}/shares`, z.array(tourShareSchema))
+  }
+  addTourShare(tourId: string, data: TourShareCreate): Promise<TourShare> {
+    return this.request('POST', `/api/tours/${tourId}/shares`, tourShareSchema, data)
+  }
+  updateTourShare(tourId: string, userId: string, data: TourShareUpdate): Promise<TourShare> {
+    return this.request('PATCH', `/api/tours/${tourId}/shares/${userId}`, tourShareSchema, data)
+  }
+  removeTourShare(tourId: string, userId: string): Promise<void> {
+    return this.request('DELETE', `/api/tours/${tourId}/shares/${userId}`, null)
+  }
+
   // Cards
   listCards(tourId: string): Promise<Card[]> {
     return this.request('GET', `/api/tours/${tourId}/cards`, z.array(cardSchema))
@@ -164,11 +182,6 @@ export class ApiClient {
     return this.request('GET', '/api/settings', z.record(z.string(), z.unknown()))
   }
   putSetting(key: string, value: unknown): Promise<void> {
-    return this.request(
-      'PUT',
-      `/api/settings/${encodeURIComponent(key)}`,
-      null,
-      { value }
-    )
+    return this.request('PUT', `/api/settings/${encodeURIComponent(key)}`, null, { value })
   }
 }

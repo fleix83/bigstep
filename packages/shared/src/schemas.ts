@@ -34,6 +34,7 @@ export const tourSchema = z.object({
   name: z.string(),
   status: tourStatusSchema,
   visibility: tourVisibilitySchema,
+  public_can_write: z.boolean(),
   geometry: lineStringSchema.nullable(),
   waypoints: z.array(lonLatSchema).nullable(),
   distance_m: z.number().int().nullable(),
@@ -56,6 +57,7 @@ export const tourUpdateSchema = z
     name: z.string().min(1).max(200),
     status: tourStatusSchema,
     visibility: tourVisibilitySchema,
+    public_can_write: z.boolean(),
     geometry: lineStringSchema.nullable(),
     waypoints: z.array(lonLatSchema).nullable(),
     distance_m: z.number().int().nonnegative().nullable(),
@@ -170,10 +172,30 @@ export const settingPutSchema = z.object({
 /** Geteilte Tour eines anderen Users (Liste «Von anderen geteilt»). */
 export const sharedTourSchema = tourSchema.extend({
   owner_name: z.string().nullable(),
+  /** Darf der eingeloggte User Book/Route bearbeiten? */
+  can_write: z.boolean(),
+})
+
+/** Freigabe einer Tour an einen bestimmten User (nur für den Owner sichtbar). */
+export const tourShareSchema = z.object({
+  user_id: z.string(),
+  name: z.string().nullable(),
+  email: z.string().nullable(),
+  can_write: z.boolean(),
+})
+export const tourShareCreateSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(320),
+  can_write: z.boolean().optional(),
+})
+export const tourShareUpdateSchema = z.object({
+  can_write: z.boolean(),
 })
 
 export type Tour = z.infer<typeof tourSchema>
 export type SharedTour = z.infer<typeof sharedTourSchema>
+export type TourShare = z.infer<typeof tourShareSchema>
+export type TourShareCreate = z.infer<typeof tourShareCreateSchema>
+export type TourShareUpdate = z.infer<typeof tourShareUpdateSchema>
 export type TourCreate = z.infer<typeof tourCreateSchema>
 export type TourUpdate = z.infer<typeof tourUpdateSchema>
 export type Card = z.infer<typeof cardSchema>

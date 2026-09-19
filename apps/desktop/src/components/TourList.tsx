@@ -192,6 +192,7 @@ export function TourList({
                   key={tour.id}
                   tour={tour}
                   ownerName={tour.owner_name ?? undefined}
+                  canWrite={tour.can_write}
                   readOnly
                   selected={tour.id === selectedId}
                   editing={false}
@@ -287,6 +288,8 @@ interface ItemProps {
   tour: Tour
   /** Bei geteilten Touren: Anzeigename des Owners. */
   ownerName?: string
+  /** Bei geteilten Touren: darf ich Book/Route bearbeiten? */
+  canWrite?: boolean
   readOnly: boolean
   selected: boolean
   editing: boolean
@@ -300,6 +303,7 @@ interface ItemProps {
 function TourListItem({
   tour,
   ownerName,
+  canWrite,
   readOnly,
   selected,
   editing,
@@ -367,7 +371,12 @@ function TourListItem({
           </button>
         )}
       </div>
-      {ownerName && <div className="mt-0.5 text-xs text-gray-400">von {ownerName}</div>}
+      {ownerName && (
+        <div className="mt-0.5 text-xs text-gray-400">
+          von {ownerName}
+          {canWrite && <span title="Du darfst diese Tour bearbeiten"> · ✎ bearbeitbar</span>}
+        </div>
+      )}
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
         <span className="whitespace-nowrap">{formatDistance(tour.distance_m)}</span>
         <span className="whitespace-nowrap">↑ {formatMeters(tour.ascent_m)}</span>
