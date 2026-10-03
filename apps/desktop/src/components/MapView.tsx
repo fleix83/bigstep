@@ -582,10 +582,15 @@ export function MapView({
           [minLon, minLat],
           [maxLon, maxLat],
         ],
-        { padding: 48, duration: 600, maxZoom: 15 }
+        {
+          // Mobil ist der Import-Dialog unten angedockt und verdeckt ~250 px.
+          padding: isMobile ? { top: 48, right: 32, bottom: 260, left: 32 } : 48,
+          duration: 600,
+          maxZoom: 15,
+        }
       )
     }
-  }, [preview, ready])
+  }, [preview, ready, isMobile])
 
   // Tourwechsel → Karte auf die gespeicherte bbox fliegen (PRD F5).
   useEffect(() => {

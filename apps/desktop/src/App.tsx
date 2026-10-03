@@ -168,6 +168,12 @@ function Shell() {
         }
       : null
 
+  const openImport = () => {
+    setFullscreen(false)
+    setTab('karte')
+    setShowImport(true)
+  }
+
   const closeImport = () => {
     setShowImport(false)
     setPreview(null)
@@ -200,12 +206,15 @@ function Shell() {
       {/* Sidebar: mobil als Startscreen im Fluss (Detail erst nach Tour-Wahl, PRD F6),
           auf Desktop als schwebende Karte links über der Map. */}
       <div
-        className={`${fullscreen ? 'hidden' : selectedId ? 'hidden md:block' : 'block'} min-h-0 flex-1 md:absolute md:inset-y-3 md:left-3 md:z-30 md:w-72 md:flex-none`}
+        className={`${fullscreen ? 'hidden' : selectedId || showImport ? 'hidden md:block' : 'block'} min-h-0 flex-1 md:absolute md:inset-y-3 md:left-3 md:z-30 md:w-72 md:flex-none`}
       >
         <TourList
           selectedId={selectedId}
           onSelect={selectTour}
           readOnly={readOnly}
+          // Touren anlegen und GPX importieren geht auch mobil; nur die Routen-Bearbeitung bleibt Desktop.
+          canCreate
+          onImportGpx={openImport}
           userEmail={user.email}
           onSignOut={() => void signOut()}
           onOpenSettings={() => setShowSettings(true)}
@@ -213,12 +222,13 @@ function Shell() {
         />
       </div>
 
+      {/* Mobil während des GPX-Imports: Karte zeigen, damit die Vorschau sichtbar ist. */}
       <main
-        className={`${fullscreen || selectedId ? 'flex' : 'hidden md:flex'} min-h-0 min-w-0 flex-1 flex-col`}
+        className={`${fullscreen || selectedId || showImport ? 'flex' : 'hidden md:flex'} min-h-0 min-w-0 flex-1 flex-col`}
       >
         {/* Reiter + Aktionen: mobil als Leiste, auf Desktop als schwebende Pille rechts der Sidebar. */}
         <nav
-          className={`${fullscreen ? 'hidden' : 'flex'} items-center gap-0.5 border-b border-gray-200 bg-white p-1 md:absolute md:left-[19.75rem] md:top-3 md:z-30 md:max-w-[calc(100%-20.5rem)] md:rounded-lg md:border md:bg-white/95 md:shadow-md md:backdrop-blur-md`}
+          className={`${fullscreen ? 'hidden' : showImport && !selectedId ? 'hidden md:flex' : 'flex'} items-center gap-0.5 border-b border-gray-200 bg-white p-1 md:absolute md:left-[19.75rem] md:top-3 md:z-30 md:max-w-[calc(100%-20.5rem)] md:rounded-lg md:border md:bg-white/95 md:shadow-md md:backdrop-blur-md`}
         >
           {selectedId && (
             <button
@@ -245,7 +255,7 @@ function Shell() {
               <button
                 className="rounded-md px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
                 title="GPX-Datei als neue Tour importieren"
-                onClick={() => setShowImport(true)}
+                onClick={openImport}
               >
                 ⤒ GPX-Import
               </button>

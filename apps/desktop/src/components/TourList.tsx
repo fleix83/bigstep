@@ -11,6 +11,10 @@ interface Props {
   onSelect: (id: string | null) => void
   /** PWA/Mobile: Editier-Controls werden nicht gerendert (PRD F6). */
   readOnly?: boolean
+  /** Neue Touren anlegen und eigene löschen (auch mobil erlaubt, wenn sonst read-only). */
+  canCreate?: boolean
+  /** Öffnet den GPX-Import; der Button erscheint nur mobil (Desktop: Reiter-Pille). */
+  onImportGpx?: () => void
   /** Fusszeile: eingeloggter User, Einstellungen, Abmelden, Upload-Status. */
   userEmail: string
   onSignOut: () => void
@@ -47,6 +51,8 @@ export function TourList({
   selectedId,
   onSelect,
   readOnly = false,
+  canCreate = !readOnly,
+  onImportGpx,
   userEmail,
   onSignOut,
   onOpenSettings,
@@ -56,6 +62,7 @@ export function TourList({
   const { data: sharedTours } = useSharedTours()
   const [query, setQuery] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [openAfterRenameId, setOpenAfterRenameId] = useState<string | null>(null)
   const [deleteCandidate, setDeleteCandidate] = useState<Tour | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const { createTour, updateTour, deleteTour } = useTourMutations(setErrorMessage)
@@ -74,8 +81,10 @@ export function TourList({
       { name: 'Neue Tour' },
       {
         onSuccess: (tour) => {
-          onSelect(tour.id)
           setEditingId(tour.id) // Name direkt inline editierbar (PRD F1)
+          // Mobil verdeckt die Detailansicht die Liste: erst benennen, dann öffnen.
+          if (readOnly) setOpenAfterRenameId(tour.id)
+          else onSelect(tour.id)
         },
       }
     )
@@ -86,6 +95,10 @@ export function TourList({
     const trimmed = name.trim()
     if (trimmed && trimmed !== tour.name) {
       updateTour.mutate({ id: tour.id, data: { name: trimmed } })
+    }
+    if (openAfterRenameId === tour.id) {
+      setOpenAfterRenameId(null)
+      onSelect(tour.id)
     }
   }
 
@@ -103,13 +116,22 @@ export function TourList({
           <Logo />
         </div>
         <div className="flex items-center gap-2">
-          {!readOnly && (
+          {canCreate && (
             <button
               className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
               title="Neue Tour anlegen"
               onClick={handleCreate}
             >
               + Neu
+            </button>
+          )}
+          {canCreate && onImportGpx && (
+            <button
+              className="shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 md:hidden"
+              title="GPX-Datei als neue Tour importieren"
+              onClick={onImportGpx}
+            >
+              ⤒ GPX
             </button>
           )}
           <label className="relative min-w-0 flex-1">
@@ -165,6 +187,9 @@ export function TourList({
               key={tour.id}
               tour={tour}
               readOnly={readOnly}
+              // Frisch angelegte Tour: Name inline setzen, auch wenn sonst read-only (mobil).
+              renamable={!readOnly || canCreate}
+              deletable={!readOnly || canCreate}
               selected={tour.id === selectedId}
               editing={tour.id === editingId}
               onSelect={() => onSelect(tour.id)}
@@ -291,6 +316,10 @@ interface ItemProps {
   /** Bei geteilten Touren: darf ich Book/Route bearbeiten? */
   canWrite?: boolean
   readOnly: boolean
+  /** Inline-Umbenennen zulassen, wenn editing gesetzt ist (Default: !readOnly). */
+  renamable?: boolean
+  /** Löschen-Button zeigen (Default: !readOnly). */
+  deletable?: boolean
   selected: boolean
   editing: boolean
   onSelect: () => void
@@ -305,6 +334,8 @@ function TourListItem({
   ownerName,
   canWrite,
   readOnly,
+  renamable = !readOnly,
+  deletable = !readOnly,
   selected,
   editing,
   onSelect,
@@ -330,10 +361,11 @@ function TourListItem({
       onClick={onSelect}
     >
       <div className="flex items-center justify-between gap-2">
-        {editing && !readOnly ? (
+        {editing && renamable ? (
           <input
             ref={inputRef}
             defaultValue={tour.name}
+            enterKeyHint="done"
             className="w-full rounded border border-blue-400 px-1 py-0.5 text-sm"
             onClick={(e) => e.stopPropagation()}
             onBlur={(e) => onRename(e.target.value)}
@@ -358,7 +390,7 @@ function TourListItem({
             {tour.name}
           </span>
         )}
-        {!readOnly && (
+        {deletable && (
           <button
             className="hidden shrink-0 rounded px-1 text-gray-400 hover:bg-red-100 hover:text-red-600 group-hover:block touch:block"
             title="Tour löschen"

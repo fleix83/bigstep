@@ -21,6 +21,12 @@ interface Props {
   onClose: () => void
 }
 
+// iOS/Android kennen keinen MIME-Typ für .gpx: mit accept-Filter sind GPX-Dateien
+// im Datei-Picker ausgegraut. Auf Touch-Geräten daher ohne Filter (parseGpx prüft).
+const GPX_ACCEPT = window.matchMedia('(pointer: coarse)').matches
+  ? undefined
+  : '.gpx,application/gpx+xml'
+
 export function ImportDialog({ onPreview, onConfirm, onClose }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [candidate, setCandidate] = useState<ImportCandidate | null>(null)
@@ -60,14 +66,15 @@ export function ImportDialog({ onPreview, onConfirm, onClose }: Props) {
   return (
     // Kein Backdrop: Die Karten-Vorschau soll während des Imports sichtbar
     // und bedienbar bleiben (Plan Phase 4: «Vorschau auf Karte»).
-    <div className="pointer-events-none fixed inset-x-0 top-24 z-30 flex justify-center">
-      <div className="pointer-events-auto w-96 rounded-lg border border-gray-200 bg-white p-4 shadow-xl">
+    // Mobil unten angedockt, damit die Vorschau oben auf der Karte sichtbar bleibt.
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:bottom-auto md:top-24 md:px-0 md:pb-0">
+      <div className="pointer-events-auto w-full max-w-96 rounded-lg border border-gray-200 bg-white p-4 shadow-xl">
         <h2 className="mb-3 text-base font-semibold text-gray-900">GPX importieren</h2>
 
         <input
           ref={fileRef}
           type="file"
-          accept=".gpx,application/gpx+xml"
+          accept={GPX_ACCEPT}
           className="mb-3 block w-full text-sm text-gray-600 file:mr-3 file:rounded file:border-0 file:bg-blue-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-blue-700"
           onChange={(e) => {
             const f = e.target.files?.[0]
