@@ -230,8 +230,8 @@ export function BookView({
       },
     })
 
-  const addTile = !readOnly && (
-    <AddCardTile compact={panel} busy={mutations.createCard.isPending} onCreate={createCard} />
+  const addButton = !readOnly && (
+    <AddCardButton compact={panel} busy={mutations.createCard.isPending} onCreate={createCard} />
   )
 
   if (panel) {
@@ -244,10 +244,11 @@ export function BookView({
       >
         {/* Kopf: rechtsbündig, immer in Spaltenbreite. Die Spaltenbreite skaliert mit
             dem Viewport (iPad: schmaler), damit links noch Karte sichtbar bleibt. */}
-        <div className="ml-auto flex w-(--panel-w) items-center pb-2">
+        <div className="ml-auto flex w-(--panel-w) items-center justify-between gap-2 pb-2">
           <span className="rounded-full bg-white/90 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500 shadow-sm backdrop-blur">
             Book
           </span>
+          {addButton}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
@@ -256,9 +257,9 @@ export function BookView({
               Lade Kacheln …
             </p>
           )}
-          {readOnly && cards && cards.length === 0 && (
+          {cards && cards.length === 0 && (
             <p className="ml-auto w-(--panel-w) rounded-xl bg-white/90 p-3 text-xs text-gray-500 shadow-sm">
-              Noch keine Kacheln.
+              {readOnly ? 'Noch keine Kacheln.' : 'Noch keine Kacheln – mit «+» oben anlegen.'}
             </p>
           )}
           <div className="flex flex-col gap-2 pb-1">
@@ -284,7 +285,6 @@ export function BookView({
                 />
               )
             )}
-            {cards && addTile}
           </div>
         </div>
 
@@ -295,16 +295,23 @@ export function BookView({
 
   return (
     <div className="h-full overflow-y-auto bg-gray-100 p-4 md:p-6">
-      <h2 className="mb-5 truncate text-xl font-bold text-gray-900 md:text-2xl">{tourName}</h2>
+      {/* Langer Tour-Name bricht um; das «+» bleibt rechts oben daneben. */}
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <h2 className="min-w-0 break-words pt-1 text-xl font-bold leading-tight text-gray-900 [overflow-wrap:anywhere] md:pt-0.5 md:text-2xl">
+          {tourName}
+        </h2>
+        {addButton}
+      </div>
 
       {isLoading && <p className="text-sm text-gray-500">Lade Cards …</p>}
-      {readOnly && cards && cards.length === 0 && (
-        <p className="text-sm text-gray-500">Noch keine Kacheln.</p>
+      {cards && cards.length === 0 && (
+        <p className="text-sm text-gray-500">
+          {readOnly ? 'Noch keine Kacheln.' : 'Noch keine Kacheln – mit «+» oben rechts anlegen.'}
+        </p>
       )}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {cards?.map((card) => renderFullCard(card))}
-        {cards && addTile}
       </div>
 
       {overlays}
@@ -1021,7 +1028,7 @@ function GalleryBlock({
 }
 
 // ---------------------------------------------------------------------------
-// Neue Kachel: grosses «+», das sich zur Layout-Auswahl aufklappt
+// Neue Kachel: «+» rechts neben der Überschrift öffnet die Layout-Auswahl
 // ---------------------------------------------------------------------------
 
 const LAYOUTS: { kind: CardKind; label: string; hint: string }[] = [
@@ -1093,12 +1100,12 @@ function LayoutGlyph({ kind }: { kind: CardKind }) {
   )
 }
 
-function AddCardTile({
+function AddCardButton({
   compact = false,
   busy,
   onCreate,
 }: {
-  /** Panel auf der Karte: schmal, ohne Beschreibungstexte. */
+  /** Panel auf der Karte: kleiner Knopf, Auswahl ohne Beschreibungstexte. */
   compact?: boolean
   busy: boolean
   onCreate: (kind: CardKind) => void
@@ -1123,78 +1130,59 @@ function AddCardTile({
     }
   }, [open])
 
-  // Die Auswahl soll vollständig sichtbar sein (Kachel liegt am Listenende).
-  useEffect(() => {
-    if (open) rootRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-  }, [open])
-
   return (
-    <div ref={rootRef} className={compact ? 'ml-auto w-(--panel-w)' : ''}>
-      {!open ? (
-        <button
-          className={`group flex w-full items-center justify-center rounded-xl border-2 border-dashed transition duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-            compact
-              ? 'h-20 border-gray-300/80 bg-white/70 backdrop-blur-md hover:bg-white/90'
-              : 'min-h-48 border-gray-300 hover:bg-white/60 lg:min-h-full'
-          } hover:border-blue-400 disabled:opacity-50`}
-          title="Neue Kachel"
-          aria-label="Neue Kachel"
-          aria-expanded={false}
-          disabled={busy}
-          onClick={() => setOpen(true)}
-        >
+    <div ref={rootRef} className="relative shrink-0">
+      {/* «+» dreht sich zum «×», solange die Auswahl offen ist. */}
+      <button
+        className={`flex items-center justify-center rounded-full transition duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 active:scale-95 disabled:opacity-50 ${
+          compact ? 'h-7 w-7' : 'h-10 w-10'
+        } ${
+          open
+            ? 'bg-gray-900 text-white shadow-md'
+            : 'bg-blue-600 text-white shadow-sm hover:scale-105 hover:bg-blue-700 hover:shadow-md'
+        }`}
+        title={open ? 'Abbrechen (Esc)' : 'Neue Kachel'}
+        aria-label={open ? 'Abbrechen' : 'Neue Kachel'}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={busy}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {busy ? (
           <span
-            className={`flex items-center justify-center rounded-full bg-white text-gray-400 shadow-sm ring-1 ring-gray-200 transition duration-200 group-hover:scale-110 group-hover:bg-blue-600 group-hover:text-white group-hover:shadow-md group-hover:ring-blue-600 group-active:scale-95 ${
-              compact ? 'h-11 w-11' : 'h-16 w-16'
+            className={`animate-spin rounded-full border-2 border-current border-t-transparent ${
+              compact ? 'h-3.5 w-3.5' : 'h-4 w-4'
             }`}
+          />
+        ) : (
+          <svg
+            className={`transition-transform duration-200 ${open ? 'rotate-45' : ''} ${
+              compact ? 'h-4 w-4' : 'h-5 w-5'
+            }`}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            aria-hidden="true"
           >
-            {busy ? (
-              <span className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            ) : (
-              <svg
-                className={compact ? 'h-5 w-5' : 'h-7 w-7'}
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                aria-hidden="true"
-              >
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-            )}
-          </span>
-        </button>
-      ) : (
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        )}
+      </button>
+
+      {open && (
         <div
-          className={`motion-safe:animate-pop-in rounded-xl bg-white shadow-xl ring-1 ring-gray-900/5 ${
-            compact ? 'p-2.5' : 'p-4'
+          className={`absolute right-0 top-full z-30 mt-2 origin-top-right rounded-xl bg-white shadow-xl ring-1 ring-gray-900/5 motion-safe:animate-pop-in ${
+            compact ? 'w-(--panel-w) p-2.5' : 'w-[26rem] max-w-[calc(100vw-2rem)] p-4'
           }`}
           role="menu"
           aria-label="Layout der neuen Kachel"
         >
-          <div className={`flex items-center justify-between ${compact ? 'mb-2 px-0.5' : 'mb-3'}`}>
-            <span className={`font-semibold text-gray-900 ${compact ? 'text-xs' : 'text-sm'}`}>
-              Neue Kachel
-            </span>
-            <button
-              className="flex h-7 w-7 items-center justify-center rounded-full text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
-              title="Abbrechen (Esc)"
-              aria-label="Abbrechen"
-              onClick={() => setOpen(false)}
-            >
-              <svg
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                aria-hidden="true"
-              >
-                <path d="M18 6 6 18M6 6l12 12" />
-              </svg>
-            </button>
+          <div
+            className={`font-semibold text-gray-900 ${compact ? 'mb-2 px-0.5 text-xs' : 'mb-3 text-sm'}`}
+          >
+            Neue Kachel
           </div>
           <div className={`grid grid-cols-2 ${compact ? 'gap-1.5' : 'gap-2.5'}`}>
             {LAYOUTS.map((l, i) => (

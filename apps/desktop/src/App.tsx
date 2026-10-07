@@ -232,7 +232,7 @@ function Shell() {
         >
           {selectedId && (
             <button
-              className="rounded-md px-2 py-1.5 text-sm text-blue-700 md:hidden"
+              className="shrink-0 whitespace-nowrap rounded-md px-2 py-1.5 text-sm text-blue-700 md:hidden"
               onClick={() => selectTour(null)}
             >
               ‹ Touren
@@ -241,7 +241,7 @@ function Shell() {
           {(['karte', 'book'] as const).map((t) => (
             <button
               key={t}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+              className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition ${
                 tab === t ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
               }`}
               onClick={() => setTab(t)}
@@ -251,7 +251,7 @@ function Shell() {
           ))}
 
           {!readOnly && (
-            <div className="ml-2 flex items-center gap-0.5 border-l border-gray-200 pl-2">
+            <div className="ml-2 flex shrink-0 items-center gap-0.5 whitespace-nowrap border-l border-gray-200 pl-2">
               <button
                 className="rounded-md px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
                 title="GPX-Datei als neue Tour importieren"
