@@ -226,6 +226,12 @@ export function MapView({
     if (appearance?.routeColor) setRouteColor(appearance.routeColor)
   }, [settingsQuery.isSuccess, settingsQuery.data])
 
+  // Die Routenfarbe ist zugleich die Primärfarbe der App (siehe index.css).
+  useEffect(() => {
+    document.documentElement.style.setProperty('--app-primary', routeColor)
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', routeColor)
+  }, [routeColor])
+
   const handleRouteColor = (color: string) => {
     setRouteColor(color)
     window.clearTimeout(routeColorSaveTimer.current)
@@ -397,7 +403,7 @@ export function MapView({
     if (!map || !ready || !editor) return
     editor.waypoints.forEach((wp, i) => {
       const el = document.createElement('div')
-      const color = i === 0 ? '#16a34a' : i === editor.waypoints.length - 1 ? '#dc2626' : '#2563eb'
+      const color = i === 0 ? '#16a34a' : i === editor.waypoints.length - 1 ? '#dc2626'  : 'var(--app-primary)'
       el.style.cssText = `width:14px;height:14px;border-radius:50%;background:${color};border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:grab`
       el.title = 'Ziehen zum Verschieben, Rechtsklick zum Löschen'
       el.addEventListener('contextmenu', (ev) => {
@@ -502,9 +508,9 @@ export function MapView({
     for (const [id, { el, box }] of photoBoxesRef.current) {
       const on = id === highlightImageId
       box.style.transform = on ? 'scale(1.5)' : 'scale(1)'
-      box.style.borderColor = on ? '#2563eb' : '#fff'
+      box.style.borderColor = on ? 'var(--app-primary)' : '#fff'
       box.style.boxShadow = on
-        ? '0 0 0 3px rgba(37,99,235,.45), 0 2px 8px rgba(0,0,0,.5)'
+        ? '0 0 0 3px color-mix(in srgb, var(--app-primary) 45%, transparent), 0 2px 8px rgba(0,0,0,.5)'
         : '0 1px 4px rgba(0,0,0,.45)'
       el.style.zIndex = on ? '5' : ''
     }

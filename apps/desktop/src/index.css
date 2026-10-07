@@ -9,7 +9,23 @@
   src: url('/fonts/caveat-700-latin.woff2') format('woff2');
 }
 
+/* Primärfarbe = aktuelle Routenfarbe (wird in MapView zur Laufzeit gesetzt).
+   Die Tailwind-Blautöne werden daraus abgeleitet, so folgt die ganze App der Farbe. */
+:root {
+  --app-primary: #2563eb;
+}
+
 @theme {
+  --color-blue-50: color-mix(in oklab, var(--app-primary) 8%, white);
+  --color-blue-100: color-mix(in oklab, var(--app-primary) 16%, white);
+  --color-blue-200: color-mix(in oklab, var(--app-primary) 30%, white);
+  --color-blue-300: color-mix(in oklab, var(--app-primary) 50%, white);
+  --color-blue-400: color-mix(in oklab, var(--app-primary) 72%, white);
+  --color-blue-500: color-mix(in oklab, var(--app-primary) 88%, white);
+  --color-blue-600: var(--app-primary);
+  --color-blue-700: color-mix(in oklab, var(--app-primary) 82%, black);
+  --color-blue-800: color-mix(in oklab, var(--app-primary) 65%, black);
+  --color-blue-900: color-mix(in oklab, var(--app-primary) 50%, black);
   --font-logo: 'Caveat', 'Bradley Hand', 'Segoe Script', 'Comic Sans MS', cursive;
 }
 
