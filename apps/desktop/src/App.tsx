@@ -15,6 +15,7 @@ import { ShareDialog } from './components/ShareDialog'
 import { MapView } from './components/MapView'
 import { ImportDialog, type ImportCandidate } from './components/ImportDialog'
 import { BookView } from './components/BookView'
+import { BookSheet } from './components/BookSheet'
 import { useSharedTours, useTours } from './hooks/useTours'
 import { useReadOnly } from './lib/use-read-only'
 import { useRouteEditor } from './hooks/useRouteEditor'
@@ -412,8 +413,8 @@ function Shell() {
               </span>
               <span className="mx-2 hidden text-gray-300 md:inline">·</span>
               <span className="block whitespace-nowrap md:inline">
-                ↑ {statsSource.ascent_m ?? '–'} m
-                <span className="mx-2 text-gray-300">·</span>↓ {statsSource.descent_m ?? '–'} m
+                ↑ {statsSource.ascent_m ?? '–'} m<span className="mx-2 text-gray-300">·</span>↓{' '}
+                {statsSource.descent_m ?? '–'} m
               </span>
             </div>
           )}
@@ -476,9 +477,9 @@ function Shell() {
             </div>
           )}
 
-          {/* Book-Modus mobil: Grid als Overlay über der Karte (Desktop nutzt das Panel). */}
+          {/* Book-Modus mobil: Bottom-Sheet über der Karte (Desktop nutzt das Panel). */}
           {tab === 'book' && (
-            <div className="absolute inset-0 z-20 bg-gray-100 md:hidden">
+            <BookSheet onClose={() => setTab('karte')}>
               {selectedTour ? (
                 <BookView
                   tourId={selectedTour.id}
@@ -493,7 +494,7 @@ function Shell() {
                   Zuerst links eine Tour wählen.
                 </div>
               )}
-            </div>
+            </BookSheet>
           )}
         </div>
       </main>

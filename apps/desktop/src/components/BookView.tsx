@@ -943,8 +943,9 @@ function GalleryBlock({
                 />
               ))}
 
-            {/* Thumbnail-Reihe */}
-            <div className="mt-3 flex flex-wrap gap-2">
+            {/* Thumbnails: quadratisches Raster über die volle Breite, so viele Spalten wie
+                mit mind. 4.5rem passen (iPhone: 4). */}
+            <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(4.5rem,1fr))] gap-2">
               {images.map((img, i) => {
                 const u = urls[img.id]
                 return (
@@ -952,7 +953,7 @@ function GalleryBlock({
                     {u ? (
                       <img
                         src={u.thumb}
-                        className={`h-20 w-20 cursor-pointer rounded-md object-cover transition ${
+                        className={`aspect-square w-full cursor-pointer rounded-md object-cover transition ${
                           img.id === highlightImageId
                             ? 'ring-2 ring-blue-500 ring-offset-1'
                             : i === activeIdx
@@ -964,7 +965,7 @@ function GalleryBlock({
                         onMouseLeave={() => onImageHover?.(null)}
                       />
                     ) : (
-                      <div className="flex h-20 w-20 items-center justify-center rounded-md bg-gray-100 text-center text-[10px] leading-tight text-gray-400">
+                      <div className="flex aspect-square w-full items-center justify-center rounded-md bg-gray-100 text-center text-[10px] leading-tight text-gray-400">
                         {u === null ? 'nicht synchron' : '…'}
                       </div>
                     )}
@@ -982,7 +983,7 @@ function GalleryBlock({
               })}
               {!readOnly && (
                 <button
-                  className="flex h-20 w-20 items-center justify-center rounded-md border-2 border-dashed border-gray-300 text-xl text-gray-400 hover:border-blue-400 hover:text-blue-600"
+                  className="flex aspect-square w-full items-center justify-center rounded-md border-2 border-dashed border-gray-300 text-xl text-gray-400 hover:border-blue-400 hover:text-blue-600"
                   title="Bilder hinzufügen"
                   onClick={() => fileRef.current?.click()}
                 >
