@@ -34,7 +34,7 @@ export function useCardMutations(tourId: string | null) {
     queryClient.invalidateQueries({ queryKey: imagesKey(tourId ?? 'none') })
 
   const createCard = useMutation({
-    mutationFn: (kind: 'text' | 'images') => api.createCard({ tour_id: tourId!, kind }),
+    mutationFn: (kind: Card['kind']) => api.createCard({ tour_id: tourId!, kind }),
     onSuccess: invalidateCards,
   })
 

@@ -231,6 +231,17 @@ describe.skipIf(!TEST_DATABASE_URL)('API (Neon-Branch test)', () => {
       await req('DELETE', `/api/cards/${card.id}`)
     })
 
+    it('POST /api/cards akzeptiert die gemischten Layouts, lehnt unbekannte ab', async () => {
+      for (const kind of ['text_images', 'images_text'] as const) {
+        const res = await req('POST', '/api/cards', { tour_id: tourId, kind })
+        const card = (await res.json()) as Card
+        expect(card.kind).toBe(kind)
+        await req('DELETE', `/api/cards/${card.id}`)
+      }
+      const bad = await req('POST', '/api/cards', { tour_id: tourId, kind: 'video' })
+      expect(bad.status).toBe(400)
+    })
+
     it('GET /api/tours/:id/cards liefert nach Position sortiert', async () => {
       const rows = (await (await req('GET', `/api/tours/${tourId}/cards`)).json()) as Card[]
       expect(rows.map((r) => r.id)).toEqual([cardA, cardB])

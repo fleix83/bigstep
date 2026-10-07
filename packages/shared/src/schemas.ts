@@ -74,7 +74,11 @@ export const tourUpdateSchema = z
 // Card
 // ---------------------------------------------------------------------------
 
-export const cardKindSchema = z.enum(['text', 'images'])
+/**
+ * Kachel-Layout: nur Text, nur Bilder, Text mit Bildern darunter oder
+ * Bilder mit Text darunter.
+ */
+export const cardKindSchema = z.enum(['text', 'images', 'text_images', 'images_text'])
 
 export const cardSchema = z.object({
   id: z.uuid(),

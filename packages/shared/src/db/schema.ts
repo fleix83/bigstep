@@ -71,7 +71,7 @@ export const cards = pgTable('cards', {
     .notNull()
     .references(() => tours.id),
   title: text('title'),
-  // Kachel-Typ: 'text' (Überschrift + Markdown) oder 'images' (Galerie).
+  // Kachel-Layout: 'text' | 'images' | 'text_images' | 'images_text' (siehe cardKindSchema).
   kind: text('kind').notNull().default('text'),
   body_md: text('body_md'),
   position: integer('position').notNull().default(0),

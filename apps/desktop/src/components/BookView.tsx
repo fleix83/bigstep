@@ -45,6 +45,11 @@ function plainSnippet(md: string): string {
     .trim()
 }
 
+type CardKind = Card['kind']
+
+const hasText = (kind: CardKind) => kind !== 'images'
+const hasImages = (kind: CardKind) => kind !== 'text'
+
 function renderMarkdown(md: string): string {
   // breaks: einfacher Zeilenumbruch im Editor = <br> in der Anzeige.
   return DOMPurify.sanitize(marked.parse(md, { async: false, gfm: true, breaks: true }))
@@ -151,7 +156,7 @@ export function BookView({
         <ConfirmDialog
           title="Kachel löschen?"
           message={`«${deleteCandidate.title || 'Ohne Titel'}» wird ${
-            deleteCandidate.kind === 'images' ? 'samt Bildern ' : ''
+            hasImages(deleteCandidate.kind) ? 'samt Bildern ' : ''
           }gelöscht.`}
           onConfirm={() => {
             mutations.deleteCard.mutate(deleteCandidate.id)
@@ -185,46 +190,49 @@ export function BookView({
     document.body
   )
 
-  const renderFullCard = (card: Card) =>
-    card.kind === 'images' ? (
-      <ImagesCard
-        key={card.id}
-        card={card}
-        images={imagesByCard.get(card.id) ?? []}
-        mutations={mutations}
-        readOnly={readOnly}
-        onDelete={() => setDeleteCandidate(card)}
-        onDeleteImage={setImageDeleteCandidate}
-        onOpenViewbox={(index) => {
-          // Fullscreen synchron innerhalb der Klick-Geste anfordern (User
-          // Activation); der Viewer selbst mountet erst nach dem Render.
-          void enterFullscreen()
-          setViewbox({ cardId: card.id, index })
-        }}
-        dragging={dragId === card.id}
-        onDragStart={() => setDragId(card.id)}
-        onDragEnd={() => setDragId(null)}
-        onDropOn={() => handleDrop(card.id)}
-        onCollapse={panel ? () => setExpandedId(null) : undefined}
-        highlightImageId={highlightImageId}
-        onImageHover={onImageHover}
-        placingImageId={placingImageId}
-        onSetPosition={readOnly ? undefined : onSetPosition}
-      />
-    ) : (
-      <TextCard
-        key={card.id}
-        card={card}
-        mutations={mutations}
-        readOnly={readOnly}
-        onDelete={() => setDeleteCandidate(card)}
-        dragging={dragId === card.id}
-        onDragStart={() => setDragId(card.id)}
-        onDragEnd={() => setDragId(null)}
-        onDropOn={() => handleDrop(card.id)}
-        onCollapse={panel ? () => setExpandedId(null) : undefined}
-      />
-    )
+  const renderFullCard = (card: Card) => (
+    <BookCard
+      key={card.id}
+      card={card}
+      images={imagesByCard.get(card.id) ?? []}
+      mutations={mutations}
+      readOnly={readOnly}
+      onDelete={() => setDeleteCandidate(card)}
+      onDeleteImage={setImageDeleteCandidate}
+      onOpenViewbox={(index) => {
+        // Fullscreen synchron innerhalb der Klick-Geste anfordern (User
+        // Activation); der Viewer selbst mountet erst nach dem Render.
+        void enterFullscreen()
+        setViewbox({ cardId: card.id, index })
+      }}
+      dragging={dragId === card.id}
+      onDragStart={() => setDragId(card.id)}
+      onDragEnd={() => setDragId(null)}
+      onDropOn={() => handleDrop(card.id)}
+      onCollapse={panel ? () => setExpandedId(null) : undefined}
+      highlightImageId={highlightImageId}
+      onImageHover={onImageHover}
+      placingImageId={placingImageId}
+      onSetPosition={readOnly ? undefined : onSetPosition}
+    />
+  )
+
+  // Neue Kachel anlegen, hinscrollen und bei Text-Layouts gleich den Titel fokussieren.
+  const createCard = (kind: CardKind) =>
+    mutations.createCard.mutate(kind, {
+      onSuccess: (c) => {
+        if (panel) setExpandedId(c.id)
+        window.setTimeout(() => {
+          const el = document.getElementById(`card-${c.id}`)
+          el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+          if (hasText(kind)) el?.querySelector('textarea')?.focus({ preventScroll: true })
+        }, 50)
+      },
+    })
+
+  const addTile = !readOnly && (
+    <AddCardTile compact={panel} busy={mutations.createCard.isPending} onCreate={createCard} />
+  )
 
   if (panel) {
     const expanded = expandedId !== null && cards?.some((c) => c.id === expandedId)
@@ -236,36 +244,10 @@ export function BookView({
       >
         {/* Kopf: rechtsbündig, immer in Spaltenbreite. Die Spaltenbreite skaliert mit
             dem Viewport (iPad: schmaler), damit links noch Karte sichtbar bleibt. */}
-        <div className="ml-auto flex w-(--panel-w) items-center justify-between gap-2 pb-2">
+        <div className="ml-auto flex w-(--panel-w) items-center pb-2">
           <span className="rounded-full bg-white/90 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500 shadow-sm backdrop-blur">
             Book
           </span>
-          {!readOnly && (
-            <div className="flex gap-1">
-              <button
-                className="rounded-lg border border-gray-200 bg-white/95 px-2.5 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
-                disabled={mutations.createCard.isPending}
-                onClick={() =>
-                  mutations.createCard.mutate('text', {
-                    onSuccess: (c) => setExpandedId(c.id),
-                  })
-                }
-              >
-                + Text
-              </button>
-              <button
-                className="rounded-lg border border-gray-200 bg-white/95 px-2.5 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
-                disabled={mutations.createCard.isPending}
-                onClick={() =>
-                  mutations.createCard.mutate('images', {
-                    onSuccess: (c) => setExpandedId(c.id),
-                  })
-                }
-              >
-                + Bilder
-              </button>
-            </div>
-          )}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
@@ -274,9 +256,9 @@ export function BookView({
               Lade Kacheln …
             </p>
           )}
-          {cards && cards.length === 0 && (
+          {readOnly && cards && cards.length === 0 && (
             <p className="ml-auto w-(--panel-w) rounded-xl bg-white/90 p-3 text-xs text-gray-500 shadow-sm">
-              {readOnly ? 'Noch keine Kacheln.' : 'Noch keine Kacheln – «+ Text» oder «+ Bilder».'}
+              Noch keine Kacheln.
             </p>
           )}
           <div className="flex flex-col gap-2 pb-1">
@@ -302,6 +284,7 @@ export function BookView({
                 />
               )
             )}
+            {cards && addTile}
           </div>
         </div>
 
@@ -312,39 +295,16 @@ export function BookView({
 
   return (
     <div className="h-full overflow-y-auto bg-gray-100 p-4 md:p-6">
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <h2 className="truncate text-xl font-bold text-gray-900 md:text-2xl">{tourName}</h2>
-        {!readOnly && (
-          <div className="flex gap-2">
-            <button
-              className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-              disabled={mutations.createCard.isPending}
-              onClick={() => mutations.createCard.mutate('text')}
-            >
-              + Text
-            </button>
-            <button
-              className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-              disabled={mutations.createCard.isPending}
-              onClick={() => mutations.createCard.mutate('images')}
-            >
-              + Bilder
-            </button>
-          </div>
-        )}
-      </div>
+      <h2 className="mb-5 truncate text-xl font-bold text-gray-900 md:text-2xl">{tourName}</h2>
 
       {isLoading && <p className="text-sm text-gray-500">Lade Cards …</p>}
-      {cards && cards.length === 0 && (
-        <p className="text-sm text-gray-500">
-          {readOnly
-            ? 'Noch keine Kacheln.'
-            : 'Noch keine Kacheln – erstelle eine Text- oder Bilder-Kachel.'}
-        </p>
+      {readOnly && cards && cards.length === 0 && (
+        <p className="text-sm text-gray-500">Noch keine Kacheln.</p>
       )}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {cards?.map((card) => renderFullCard(card))}
+        {cards && addTile}
       </div>
 
       {overlays}
@@ -416,16 +376,16 @@ function CompactTile({
             ) : (
               <span />
             )}
-            {card.kind === 'images' && (
+            {hasImages(card.kind) && (
               <div className="text-[11px] text-gray-400">
                 {images.length} {images.length === 1 ? 'Bild' : 'Bilder'}
               </div>
             )}
           </div>
           <div className="line-clamp-2 text-sm font-semibold leading-snug text-gray-900">
-            {card.title || (card.kind === 'images' ? 'Bilder' : 'Ohne Titel')}
+            {card.title || (hasText(card.kind) ? 'Ohne Titel' : 'Bilder')}
           </div>
-          {card.kind === 'text' && snippet && (
+          {hasText(card.kind) && snippet && (
             <div className="mt-1 line-clamp-4 text-sm leading-snug text-gray-600">{snippet}</div>
           )}
           {card.kind === 'images' && images.length === 0 && (
@@ -436,7 +396,7 @@ function CompactTile({
 
       {/* Karussell: alle Bilder horizontal scrollbar; Hover markiert den Foto-Pin,
           Klick öffnet die Viewbox. */}
-      {card.kind === 'images' && images.length > 0 && (
+      {hasImages(card.kind) && images.length > 0 && (
         <div
           ref={stripRef}
           className="flex snap-x gap-1.5 overflow-x-auto overscroll-x-contain px-3 pb-3 pt-1 [scrollbar-width:thin]"
@@ -611,139 +571,10 @@ function CardHeader({
 }
 
 // ---------------------------------------------------------------------------
-// Text-Kachel: grosse Überschrift + Markdown (Fliesstext, Bulletpoints)
+// Kachel: Text- und Bilder-Block in der Reihenfolge des Layouts (card.kind)
 // ---------------------------------------------------------------------------
 
-interface TextCardProps {
-  card: Card
-  mutations: ReturnType<typeof useCardMutations>
-  readOnly: boolean
-  onDelete: () => void
-  dragging: boolean
-  onDragStart: () => void
-  onDragEnd: () => void
-  onDropOn: () => void
-  onCollapse?: () => void
-}
-
-function TextCard({
-  card,
-  mutations,
-  readOnly,
-  onDelete,
-  dragging,
-  onDragStart,
-  onDragEnd,
-  onDropOn,
-  onCollapse,
-}: TextCardProps) {
-  const [editingBody, setEditingBody] = useState(false)
-  const [bodyDraft, setBodyDraft] = useState(card.body_md ?? '')
-
-  const saveBody = () => {
-    setEditingBody(false)
-    if (bodyDraft !== (card.body_md ?? '')) {
-      mutations.updateCard.mutate({ id: card.id, data: { body_md: bodyDraft || null } })
-    }
-  }
-
-  return (
-    <div
-      id={`card-${card.id}`}
-      className={`group flex flex-col rounded-xl bg-white shadow-sm transition ${
-        dragging ? 'opacity-40' : ''
-      }`}
-      onDragOver={readOnly ? undefined : (e) => e.preventDefault()}
-      onDrop={
-        readOnly
-          ? undefined
-          : (e) => {
-              e.preventDefault()
-              onDropOn()
-            }
-      }
-    >
-      <CardHeader
-        card={card}
-        readOnly={readOnly}
-        mutations={mutations}
-        onDelete={onDelete}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
-        onCollapse={onCollapse}
-      />
-
-      <div className="flex-1 px-6 pb-6 pt-2 md:px-8">
-        {readOnly ? (
-          <h3 className="mb-4 break-words text-2xl font-semibold leading-tight text-gray-900 md:text-3xl">
-            {card.title || 'Ohne Titel'}
-          </h3>
-        ) : (
-          <textarea
-            className="mb-4 block w-full resize-none overflow-hidden bg-transparent text-2xl font-semibold leading-tight text-gray-900 outline-none placeholder:text-gray-300 md:text-3xl"
-            placeholder="Überschrift …"
-            rows={1}
-            defaultValue={card.title ?? ''}
-            ref={autoGrow}
-            onInput={(e) => autoGrow(e.currentTarget)}
-            onKeyDown={(e) => {
-              // Enter = fertig (kein Zeilenumbruch im Titel)
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                e.currentTarget.blur()
-              }
-            }}
-            onBlur={(e) => {
-              const v = e.target.value.replace(/\s+/g, ' ').trim()
-              if (v !== (card.title ?? '')) {
-                mutations.updateCard.mutate({ id: card.id, data: { title: v || null } })
-              }
-            }}
-          />
-        )}
-
-        {editingBody && !readOnly ? (
-          <textarea
-            autoFocus
-            className="h-48 w-full resize-y rounded border border-blue-300 p-3 font-mono text-sm outline-none"
-            value={bodyDraft}
-            onChange={(e) => setBodyDraft(e.target.value)}
-            onBlur={saveBody}
-            placeholder={'Fliesstext …\n\n- Bulletpoints\n- gehen auch'}
-          />
-        ) : (
-          <div
-            className={`max-w-none whitespace-normal break-words text-gray-800 [overflow-wrap:anywhere] [&_a]:text-blue-600 [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-gray-200 [&_blockquote]:pl-4 [&_blockquote]:text-gray-500 [&_code]:rounded [&_code]:bg-gray-100 [&_code]:px-1 [&_h1]:mt-4 [&_h1]:mb-2 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:mt-4 [&_h2]:mb-2 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_h3]:font-semibold [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2 [&_p]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-gray-100 [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2 ${
-              readOnly ? '' : 'cursor-text'
-            }`}
-            title={readOnly ? undefined : 'Klicken zum Bearbeiten'}
-            onClick={
-              readOnly
-                ? undefined
-                : () => {
-                    setBodyDraft(card.body_md ?? '')
-                    setEditingBody(true)
-                  }
-            }
-            dangerouslySetInnerHTML={{
-              __html: card.body_md
-                ? renderMarkdown(card.body_md)
-                : readOnly
-                  ? ''
-                  : '<span class="text-gray-400">Text hinzufügen …</span>',
-            }}
-          />
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Bilder-Kachel: ein Bild gross, Thumbnails darunter, Untertitel pro Bild
-// ---------------------------------------------------------------------------
-
-interface ImagesCardProps {
+interface BookCardProps {
   card: Card
   images: Image[]
   mutations: ReturnType<typeof useCardMutations>
@@ -762,7 +593,7 @@ interface ImagesCardProps {
   onSetPosition?: (imageId: string) => void
 }
 
-function ImagesCard({
+function BookCard({
   card,
   images,
   mutations,
@@ -775,11 +606,224 @@ function ImagesCard({
   onDragEnd,
   onDropOn,
   onCollapse,
+  highlightImageId,
+  onImageHover,
+  placingImageId,
+  onSetPosition,
+}: BookCardProps) {
+  const [dragOver, setDragOver] = useState(false)
+  const withImages = hasImages(card.kind)
+  const mixed = withImages && hasText(card.kind)
+
+  const text = (
+    <TextBlock
+      key="text"
+      card={card}
+      mutations={mutations}
+      readOnly={readOnly}
+      mixed={mixed}
+      // Text unter den Bildern: kein zusätzlicher Abstand nach oben.
+      className={card.kind === 'images_text' ? 'px-6 pb-6 pt-3 md:px-8' : 'px-6 pb-6 pt-2 md:px-8'}
+    />
+  )
+  const gallery = (
+    <GalleryBlock
+      key="gallery"
+      card={card}
+      images={images}
+      mutations={mutations}
+      readOnly={readOnly}
+      mixed={mixed}
+      onDeleteImage={onDeleteImage}
+      onOpenViewbox={onOpenViewbox}
+      highlightImageId={highlightImageId}
+      onImageHover={onImageHover}
+      placingImageId={placingImageId}
+      onSetPosition={onSetPosition}
+      className={card.kind === 'text_images' ? 'px-4 pb-4 -mt-2' : 'px-4 pb-4 pt-2'}
+    />
+  )
+  const blocks =
+    card.kind === 'text'
+      ? [text]
+      : card.kind === 'images'
+        ? [gallery]
+        : card.kind === 'text_images'
+          ? [text, gallery]
+          : [gallery, text]
+
+  return (
+    <div
+      id={`card-${card.id}`}
+      className={`group flex flex-col rounded-xl bg-white shadow-sm transition ${
+        dragging ? 'opacity-40' : ''
+      } ${dragOver ? 'ring-2 ring-blue-400' : ''}`}
+      onDragOver={
+        readOnly
+          ? undefined
+          : (e) => {
+              e.preventDefault()
+              if (withImages) setDragOver(true)
+            }
+      }
+      onDragLeave={readOnly || !withImages ? undefined : () => setDragOver(false)}
+      onDrop={
+        readOnly
+          ? undefined
+          : (e) => {
+              e.preventDefault()
+              setDragOver(false)
+              // Dateien auf eine Kachel mit Bildern = Import, sonst Umsortieren.
+              if (withImages && e.dataTransfer.files.length > 0) {
+                mutations.addImages.mutate({ cardId: card.id, files: [...e.dataTransfer.files] })
+              } else onDropOn()
+            }
+      }
+    >
+      <CardHeader
+        card={card}
+        readOnly={readOnly}
+        mutations={mutations}
+        onDelete={onDelete}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        onCollapse={onCollapse}
+      />
+      {blocks}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Text-Block: grosse Überschrift + Markdown (Fliesstext, Bulletpoints)
+// ---------------------------------------------------------------------------
+
+function TextBlock({
+  card,
+  mutations,
+  readOnly,
+  mixed,
+  className,
+}: {
+  card: Card
+  mutations: ReturnType<typeof useCardMutations>
+  readOnly: boolean
+  /** Gemischte Kachel: leere Felder in der Lesansicht ganz weglassen. */
+  mixed: boolean
+  className: string
+}) {
+  const [editingBody, setEditingBody] = useState(false)
+  const [bodyDraft, setBodyDraft] = useState(card.body_md ?? '')
+
+  const saveBody = () => {
+    setEditingBody(false)
+    if (bodyDraft !== (card.body_md ?? '')) {
+      mutations.updateCard.mutate({ id: card.id, data: { body_md: bodyDraft || null } })
+    }
+  }
+
+  if (readOnly && mixed && !card.title && !card.body_md) return null
+
+  return (
+    <div className={`flex-1 ${className}`}>
+      {readOnly ? (
+        (card.title || !mixed) && (
+          <h3 className="mb-4 break-words text-2xl font-semibold leading-tight text-gray-900 md:text-3xl">
+            {card.title || 'Ohne Titel'}
+          </h3>
+        )
+      ) : (
+        <textarea
+          className="mb-4 block w-full resize-none overflow-hidden bg-transparent text-2xl font-semibold leading-tight text-gray-900 outline-none placeholder:text-gray-300 md:text-3xl"
+          placeholder="Überschrift …"
+          rows={1}
+          defaultValue={card.title ?? ''}
+          ref={autoGrow}
+          onInput={(e) => autoGrow(e.currentTarget)}
+          onKeyDown={(e) => {
+            // Enter = fertig (kein Zeilenumbruch im Titel)
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              e.currentTarget.blur()
+            }
+          }}
+          onBlur={(e) => {
+            const v = e.target.value.replace(/\s+/g, ' ').trim()
+            if (v !== (card.title ?? '')) {
+              mutations.updateCard.mutate({ id: card.id, data: { title: v || null } })
+            }
+          }}
+        />
+      )}
+
+      {editingBody && !readOnly ? (
+        <textarea
+          autoFocus
+          className="h-48 w-full resize-y rounded border border-blue-300 p-3 font-mono text-sm outline-none"
+          value={bodyDraft}
+          onChange={(e) => setBodyDraft(e.target.value)}
+          onBlur={saveBody}
+          placeholder={'Fliesstext …\n\n- Bulletpoints\n- gehen auch'}
+        />
+      ) : (
+        <div
+          className={`max-w-none whitespace-normal break-words text-gray-800 [overflow-wrap:anywhere] [&_a]:text-blue-600 [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-gray-200 [&_blockquote]:pl-4 [&_blockquote]:text-gray-500 [&_code]:rounded [&_code]:bg-gray-100 [&_code]:px-1 [&_h1]:mt-4 [&_h1]:mb-2 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:mt-4 [&_h2]:mb-2 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_h3]:font-semibold [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2 [&_p]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-gray-100 [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2 ${
+            readOnly ? '' : 'cursor-text'
+          }`}
+          title={readOnly ? undefined : 'Klicken zum Bearbeiten'}
+          onClick={
+            readOnly
+              ? undefined
+              : () => {
+                  setBodyDraft(card.body_md ?? '')
+                  setEditingBody(true)
+                }
+          }
+          dangerouslySetInnerHTML={{
+            __html: card.body_md
+              ? renderMarkdown(card.body_md)
+              : readOnly
+                ? ''
+                : '<span class="text-gray-400">Text hinzufügen …</span>',
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Bilder-Block: ein Bild gross, Thumbnails darunter, Untertitel pro Bild
+// ---------------------------------------------------------------------------
+
+function GalleryBlock({
+  card,
+  images,
+  mutations,
+  readOnly,
+  mixed,
+  onDeleteImage,
+  onOpenViewbox,
   highlightImageId = null,
   onImageHover,
   placingImageId = null,
   onSetPosition,
-}: ImagesCardProps) {
+  className,
+}: {
+  card: Card
+  images: Image[]
+  mutations: ReturnType<typeof useCardMutations>
+  readOnly: boolean
+  /** Gemischte Kachel: flachere Ablagefläche, leere Galerie in der Lesansicht weglassen. */
+  mixed: boolean
+  onDeleteImage: (img: Image) => void
+  onOpenViewbox: (index: number) => void
+  highlightImageId?: string | null
+  onImageHover?: (imageId: string | null) => void
+  placingImageId?: string | null
+  onSetPosition?: (imageId: string) => void
+  className: string
+}) {
   const [activeIdx, setActiveIdx] = useState(0)
 
   // Markierter Foto-Pin (Karte) → dieses Bild gross zeigen.
@@ -788,7 +832,6 @@ function ImagesCard({
     const i = images.findIndex((im) => im.id === highlightImageId)
     if (i >= 0) setActiveIdx(i)
   }, [highlightImageId, images])
-  const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const urls = useImageUrls(images)
   const uploading =
@@ -807,49 +850,19 @@ function ImagesCard({
     mutations.addImages.mutate({ cardId: card.id, files: [...files] })
   }
 
-  return (
-    <div
-      id={`card-${card.id}`}
-      className={`group flex flex-col rounded-xl bg-white shadow-sm transition ${
-        dragging ? 'opacity-40' : ''
-      } ${dragOver ? 'ring-2 ring-blue-400' : ''}`}
-      onDragOver={
-        readOnly
-          ? undefined
-          : (e) => {
-              e.preventDefault()
-              setDragOver(true)
-            }
-      }
-      onDragLeave={readOnly ? undefined : () => setDragOver(false)}
-      onDrop={
-        readOnly
-          ? undefined
-          : (e) => {
-              e.preventDefault()
-              setDragOver(false)
-              if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files)
-              else onDropOn()
-            }
-      }
-    >
-      <CardHeader
-        card={card}
-        readOnly={readOnly}
-        mutations={mutations}
-        onDelete={onDelete}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
-        onCollapse={onCollapse}
-      />
+  if (readOnly && mixed && images.length === 0) return null
 
-      <div className="flex-1 px-4 pb-4 pt-2">
+  return (
+    <>
+      <div className={className}>
         {images.length === 0 ? (
           readOnly ? (
             <p className="py-10 text-center text-sm text-gray-400">Noch keine Bilder.</p>
           ) : (
             <button
-              className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-400 hover:border-blue-400 hover:text-blue-600"
+              className={`flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-400 hover:border-blue-400 hover:text-blue-600 ${
+                mixed ? 'aspect-[2/1]' : 'aspect-[4/3]'
+              }`}
               onClick={() => fileRef.current?.click()}
             >
               <span className="text-3xl">📷</span>
@@ -1002,6 +1015,218 @@ function ImagesCard({
             e.target.value = ''
           }}
         />
+      )}
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Neue Kachel: grosses «+», das sich zur Layout-Auswahl aufklappt
+// ---------------------------------------------------------------------------
+
+const LAYOUTS: { kind: CardKind; label: string; hint: string }[] = [
+  { kind: 'text', label: 'Text', hint: 'Überschrift und Fliesstext' },
+  { kind: 'images', label: 'Bilder', hint: 'Galerie mit Untertiteln' },
+  { kind: 'text_images', label: 'Text + Bilder', hint: 'Bilder unter dem Text' },
+  { kind: 'images_text', label: 'Bilder + Text', hint: 'Text unter den Bildern' },
+]
+
+/** Skizze einer Kachel im jeweiligen Layout (Text = Linien, Bild = Fläche mit Berg). */
+function LayoutGlyph({ kind }: { kind: CardKind }) {
+  const textAt = (y: number, lines: number) => (
+    <g key={`t${y}`}>
+      <rect x="8" y={y} width="20" height="3.5" rx="1.75" fill="currentColor" />
+      {Array.from({ length: lines }, (_, i) => (
+        <rect
+          key={i}
+          x="8"
+          y={y + 7 + i * 4.5}
+          width={i === lines - 1 ? 22 : 32}
+          height="2"
+          rx="1"
+          fill="currentColor"
+          opacity=".35"
+        />
+      ))}
+    </g>
+  )
+  const imageAt = (y: number, h: number) => (
+    <g key={`i${y}`}>
+      <rect x="8" y={y} width="32" height={h} rx="2.5" fill="currentColor" opacity=".16" />
+      <path
+        d={`M10 ${y + h - 2} l8 -${h * 0.45} l5 ${h * 0.25} l4 -${h * 0.15} l11 ${h * 0.35} z`}
+        fill="currentColor"
+        opacity=".45"
+      />
+      <circle
+        cx="33"
+        cy={y + h * 0.3}
+        r={Math.min(2.5, h * 0.14)}
+        fill="currentColor"
+        opacity=".55"
+      />
+    </g>
+  )
+  const parts =
+    kind === 'text'
+      ? [textAt(9, 4)]
+      : kind === 'images'
+        ? [imageAt(7, 26)]
+        : kind === 'text_images'
+          ? [textAt(6, 1), imageAt(19, 15)]
+          : [imageAt(6, 15), textAt(25, 1)]
+  return (
+    <svg viewBox="0 0 48 40" className="h-full w-full" aria-hidden="true">
+      <rect
+        x="1"
+        y="1"
+        width="46"
+        height="38"
+        rx="5"
+        fill="white"
+        stroke="currentColor"
+        strokeOpacity=".25"
+        strokeWidth="1.5"
+      />
+      {parts}
+    </svg>
+  )
+}
+
+function AddCardTile({
+  compact = false,
+  busy,
+  onCreate,
+}: {
+  /** Panel auf der Karte: schmal, ohne Beschreibungstexte. */
+  compact?: boolean
+  busy: boolean
+  onCreate: (kind: CardKind) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  // Klick ausserhalb oder Esc klappt die Auswahl wieder zu.
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  // Die Auswahl soll vollständig sichtbar sein (Kachel liegt am Listenende).
+  useEffect(() => {
+    if (open) rootRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [open])
+
+  return (
+    <div ref={rootRef} className={compact ? 'ml-auto w-(--panel-w)' : ''}>
+      {!open ? (
+        <button
+          className={`group flex w-full items-center justify-center rounded-xl border-2 border-dashed transition duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+            compact
+              ? 'h-20 border-gray-300/80 bg-white/70 backdrop-blur-md hover:bg-white/90'
+              : 'min-h-48 border-gray-300 hover:bg-white/60 lg:min-h-full'
+          } hover:border-blue-400 disabled:opacity-50`}
+          title="Neue Kachel"
+          aria-label="Neue Kachel"
+          aria-expanded={false}
+          disabled={busy}
+          onClick={() => setOpen(true)}
+        >
+          <span
+            className={`flex items-center justify-center rounded-full bg-white text-gray-400 shadow-sm ring-1 ring-gray-200 transition duration-200 group-hover:scale-110 group-hover:bg-blue-600 group-hover:text-white group-hover:shadow-md group-hover:ring-blue-600 group-active:scale-95 ${
+              compact ? 'h-11 w-11' : 'h-16 w-16'
+            }`}
+          >
+            {busy ? (
+              <span className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : (
+              <svg
+                className={compact ? 'h-5 w-5' : 'h-7 w-7'}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            )}
+          </span>
+        </button>
+      ) : (
+        <div
+          className={`motion-safe:animate-pop-in rounded-xl bg-white shadow-xl ring-1 ring-gray-900/5 ${
+            compact ? 'p-2.5' : 'p-4'
+          }`}
+          role="menu"
+          aria-label="Layout der neuen Kachel"
+        >
+          <div className={`flex items-center justify-between ${compact ? 'mb-2 px-0.5' : 'mb-3'}`}>
+            <span className={`font-semibold text-gray-900 ${compact ? 'text-xs' : 'text-sm'}`}>
+              Neue Kachel
+            </span>
+            <button
+              className="flex h-7 w-7 items-center justify-center rounded-full text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
+              title="Abbrechen (Esc)"
+              aria-label="Abbrechen"
+              onClick={() => setOpen(false)}
+            >
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className={`grid grid-cols-2 ${compact ? 'gap-1.5' : 'gap-2.5'}`}>
+            {LAYOUTS.map((l, i) => (
+              <button
+                key={l.kind}
+                role="menuitem"
+                autoFocus={i === 0}
+                className={`group/opt flex flex-col items-center rounded-lg border border-gray-200 text-center text-gray-400 transition duration-150 hover:-translate-y-0.5 hover:border-blue-500 hover:bg-blue-50 hover:text-blue-600 hover:shadow-sm focus:outline-none focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500/30 active:translate-y-0 ${
+                  compact ? 'gap-1 p-2' : 'gap-2 px-3 pb-3 pt-3.5'
+                }`}
+                onClick={() => {
+                  setOpen(false)
+                  onCreate(l.kind)
+                }}
+              >
+                <span className={compact ? 'h-9 w-11' : 'h-16 w-[4.8rem]'}>
+                  <LayoutGlyph kind={l.kind} />
+                </span>
+                <span
+                  className={`font-medium text-gray-800 group-hover/opt:text-blue-700 ${
+                    compact ? 'text-[11px] leading-tight' : 'text-sm'
+                  }`}
+                >
+                  {l.label}
+                </span>
+                {!compact && (
+                  <span className="-mt-1 text-xs leading-snug text-gray-500">{l.hint}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   )
