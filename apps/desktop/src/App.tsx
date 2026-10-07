@@ -238,17 +238,17 @@ function Shell() {
               ‹ Touren
             </button>
           )}
-          {(['karte', 'book'] as const).map((t) => (
-            <button
-              key={t}
-              className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                tab === t ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
-              }`}
-              onClick={() => setTab(t)}
-            >
-              {t === 'karte' ? 'Karte' : 'Book'}
-            </button>
-          ))}
+          {/* Kein eigener «Karte»-Reiter: «Book» schaltet um, nochmals tippen führt zur Karte zurück. */}
+          <button
+            className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition ${
+              tab === 'book' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
+            }`}
+            title={tab === 'book' ? 'Zurück zur Karte' : 'Book öffnen'}
+            aria-pressed={tab === 'book'}
+            onClick={() => setTab(tab === 'book' ? 'karte' : 'book')}
+          >
+            Book
+          </button>
 
           {!readOnly && (
             <div className="ml-2 flex shrink-0 items-center gap-0.5 whitespace-nowrap border-l border-gray-200 pl-2">
@@ -334,12 +334,20 @@ function Shell() {
             fullscreen={fullscreen}
             onToggleFullscreen={() => setFullscreen((f) => !f)}
             hideControls={tab === 'book'}
+            onOpenBook={
+              selectedTour
+                ? () => {
+                    setFullscreen(false)
+                    setTab('book')
+                  }
+                : undefined
+            }
           />
 
           {/* Editor-Toolbar */}
           {!readOnly && canWrite && tab === 'karte' && selectedTour && (
             <div
-              className={`absolute left-14 top-2 z-10 flex items-center gap-1 rounded-lg border border-gray-200 bg-white/95 px-2 py-1.5 shadow-md ${fullscreen ? '' : 'md:left-[22.75rem] md:top-[3.875rem]'}`}
+              className={`absolute left-2 top-2 z-10 flex items-center gap-1 rounded-lg border border-gray-200 bg-white/95 px-2 py-1.5 shadow-md ${fullscreen ? '' : 'md:left-[22.75rem] md:top-[3.875rem]'}`}
             >
               {!editing ? (
                 <button

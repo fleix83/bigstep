@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   AttributionControl,
   GeolocateControl,
   Map as MaplibreMap,
   Marker,
-  NavigationControl,
   setWorkerUrl,
   type GeoJSONSource,
   type StyleSpecification,
@@ -75,6 +74,8 @@ interface Props {
   onToggleFullscreen?: () => void
   /** Book-Modus (Desktop): Ortssuche und Kartenoptionen ausblenden (Platz fürs Book-Panel). */
   hideControls?: boolean
+  /** «B»-Knopf in der rechten Leiste: zum Book der aktiven Tour wechseln. */
+  onOpenBook?: () => void
 }
 
 export interface PhotoPin {
@@ -193,13 +194,16 @@ export function MapView({
   fullscreen = false,
   hideControls = false,
   onToggleFullscreen,
+  onOpenBook,
 }: Props) {
   const isMobile = useIsMobile()
-  // Layer-Panel: auf dem Smartphone eingeklappt starten («möglichst viel Karte»).
-  const [panelOpen, setPanelOpen] = useState(!isMobile)
+  // Kartenoptionen starten eingeklappt: offen überdecken sie die Knöpfe darunter.
+  const [panelOpen, setPanelOpen] = useState(false)
   const api = useApi()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MaplibreMap | null>(null)
+  const geolocateRef = useRef<GeolocateControl | null>(null)
+  const [geoState, setGeoState] = useState<'off' | 'pending' | 'active' | 'background'>('off')
   const [ready, setReady] = useState(false)
 
   // Zustand der Bedienelemente; null bis die Settings geladen sind.
@@ -304,17 +308,25 @@ export function MapView({
     })
     // Attribution «© swisstopo» dauerhaft sichtbar (PRD F2, Pflicht).
     map.addControl(new AttributionControl({ compact: false, customAttribution: '© swisstopo' }))
-    map.addControl(new NavigationControl({ showCompass: false }), 'top-left')
-    // Standort-Button unten rechts (v. a. mobile PWA): GPS-Position mit
-    // Puck und Genauigkeitskreis; braucht Secure Context (https/localhost).
-    map.addControl(
-      new GeolocateControl({
-        positionOptions: { enableHighAccuracy: true },
-        trackUserLocation: true,
-        showUserLocation: true,
-      }),
-      'bottom-right'
+    // Standort (v. a. mobile PWA): GPS-Position mit Puck und Genauigkeitskreis;
+    // braucht Secure Context (https/localhost). Der MapLibre-Knopf ist per CSS
+    // versteckt, ausgelöst wird über den runden Knopf der rechten Leiste.
+    const geolocate = new GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: true,
+      showUserLocation: true,
+    })
+    geolocateRef.current = geolocate
+    geolocate.on('trackuserlocationstart', () => setGeoState('active'))
+    geolocate.on('userlocationfocus', () => setGeoState('active'))
+    geolocate.on('userlocationlostfocus', () => setGeoState('background'))
+    // «end» kommt beim Ausschalten und beim Verschieben der Karte (dann zusammen
+    // mit «lostfocus») – erst danach entscheiden, ob es wirklich «aus» ist.
+    geolocate.on('trackuserlocationend', () =>
+      window.setTimeout(() => setGeoState((s) => (s === 'background' ? s : 'off')))
     )
+    geolocate.on('error', () => setGeoState('off'))
+    map.addControl(geolocate, 'bottom-right')
     // `style.load` feuert, sobald Quellen/Layer bereit sind — `load` würde
     // zusätzlich auf sämtliche initialen Kacheln warten.
     map.on('style.load', () => setReady(true))
@@ -403,7 +415,8 @@ export function MapView({
     if (!map || !ready || !editor) return
     editor.waypoints.forEach((wp, i) => {
       const el = document.createElement('div')
-      const color = i === 0 ? '#16a34a' : i === editor.waypoints.length - 1 ? '#dc2626'  : 'var(--app-primary)'
+      const color =
+        i === 0 ? '#16a34a' : i === editor.waypoints.length - 1 ? '#dc2626' : 'var(--app-primary)'
       el.style.cssText = `width:14px;height:14px;border-radius:50%;background:${color};border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:grab`
       el.title = 'Ziehen zum Verschieben, Rechtsklick zum Löschen'
       el.addEventListener('contextmenu', (ev) => {
@@ -621,101 +634,157 @@ export function MapView({
   }, [visible, fullscreen])
 
   return (
-    <div className={`relative h-full w-full ${fullscreen ? '' : 'map-floating'}`}>
+    <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
 
-      {/* Ortssuche: volle Breite auf dem Smartphone; auf Desktop rechts neben den
-          Kartenoptionen (mittig würde sie mit der Reiter-Pille kollidieren), im
+      {/* Ortssuche: volle Breite auf dem Smartphone; auf Desktop links neben der
+          rechten Knopfleiste (mittig würde sie mit der Reiter-Pille kollidieren), im
           Karten-Vollbild mittig. */}
       <div
-        className={`absolute left-12 right-24 top-2 z-10 ${hideControls ? 'hidden' : ''} ${
+        className={`absolute left-2 right-14 top-2 z-10 ${hideControls ? 'hidden' : ''} ${
           fullscreen
             ? 'md:left-1/2 md:right-auto md:w-80 md:-translate-x-1/2'
-            : 'md:left-auto md:right-24 md:w-72'
+            : 'md:left-auto md:right-14 md:w-72'
         }`}
       >
         <MapSearch onPick={handleSearchPick} />
       </div>
 
+      {/* Rechte Bedienleiste: runde Knöpfe untereinander. Die Kartenoptionen klappen
+          unter ihrem Knopf auf und überdecken die Knöpfe darunter. */}
       <div
-        className={`absolute right-2 top-2 z-20 flex flex-col items-end gap-2 ${hideControls ? 'hidden' : ''}`}
+        className={`absolute right-2 top-2 z-20 flex flex-col items-center gap-2 ${hideControls ? 'hidden' : ''}`}
       >
-        <div className="flex gap-1">
-          <button
-            className="rounded-lg border border-gray-200 bg-white/95 px-2.5 py-1.5 text-sm shadow-md hover:bg-gray-50"
+        {onToggleFullscreen && (
+          <RailButton
+            title={fullscreen ? 'Vollbild verlassen' : 'Karte im Vollbild'}
+            onClick={onToggleFullscreen}
+          >
+            {fullscreen ? (
+              <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" />
+            ) : (
+              <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />
+            )}
+          </RailButton>
+        )}
+
+        <div className="relative">
+          <RailButton
             title={panelOpen ? 'Kartenoptionen ausblenden' : 'Kartenoptionen einblenden'}
+            active={panelOpen}
             onClick={() => setPanelOpen((o) => !o)}
           >
-            ▤
-          </button>
-          {onToggleFullscreen && (
-            <button
-              className="rounded-lg border border-gray-200 bg-white/95 px-2.5 py-1.5 text-sm shadow-md hover:bg-gray-50"
-              title={fullscreen ? 'Vollbild verlassen' : 'Karte im Vollbild'}
-              onClick={onToggleFullscreen}
-            >
-              {fullscreen ? '✕' : '⛶'}
-            </button>
+            <path d="m12 2 10 5-10 5L2 7l10-5zM2 12l10 5 10-5M2 17l10 5 10-5" />
+          </RailButton>
+          {ui && panelOpen && (
+            <div className="absolute right-0 top-full z-30 mt-2 w-52 rounded-xl border border-gray-200 bg-white/95 p-3 shadow-lg backdrop-blur-md motion-safe:animate-pop-in">
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Basiskarte
+              </div>
+              {(Object.entries(BASE_LAYERS) as [BaseKey, (typeof BASE_LAYERS)[BaseKey]][]).map(
+                ([key, def]) => (
+                  <label
+                    key={key}
+                    className="flex cursor-pointer items-center gap-2 py-0.5 text-sm"
+                  >
+                    <input
+                      type="radio"
+                      name="base"
+                      checked={ui.base === key}
+                      onChange={() => setUi({ ...ui, base: key })}
+                    />
+                    {def.label}
+                  </label>
+                )
+              )}
+
+              <div className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Overlays
+              </div>
+              {OVERLAY_KEYS.map((key) => (
+                <label key={key} className="flex cursor-pointer items-center gap-2 py-0.5 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={ui.overlays[key]}
+                    onChange={(e) =>
+                      setUi({ ...ui, overlays: { ...ui.overlays, [key]: e.target.checked } })
+                    }
+                  />
+                  {OVERLAY_LAYERS[key].label}
+                </label>
+              ))}
+
+              <div className="mt-3 border-t border-gray-100 pt-2">
+                <label className="flex cursor-pointer items-center gap-2 py-0.5 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={ui.showOthers}
+                    onChange={(e) => setUi({ ...ui, showOthers: e.target.checked })}
+                  />
+                  Andere Touren
+                </label>
+                <label className="flex items-center justify-between gap-2 py-1 text-sm">
+                  Routenfarbe
+                  <input
+                    type="color"
+                    value={routeColor}
+                    onChange={(e) => handleRouteColor(e.target.value)}
+                    className="h-6 w-10 cursor-pointer rounded border border-gray-200"
+                    title="Farbe der Routenlinie (pro Konto gespeichert)"
+                  />
+                </label>
+              </div>
+            </div>
           )}
         </div>
 
-        {ui && panelOpen && (
-          <div className="w-48 rounded-lg border border-gray-200 bg-white/95 p-3 shadow-md">
-            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Basiskarte
-            </div>
-            {(Object.entries(BASE_LAYERS) as [BaseKey, (typeof BASE_LAYERS)[BaseKey]][]).map(
-              ([key, def]) => (
-                <label key={key} className="flex cursor-pointer items-center gap-2 py-0.5 text-sm">
-                  <input
-                    type="radio"
-                    name="base"
-                    checked={ui.base === key}
-                    onChange={() => setUi({ ...ui, base: key })}
-                  />
-                  {def.label}
-                </label>
-              )
-            )}
-
-            <div className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Overlays
-            </div>
-            {OVERLAY_KEYS.map((key) => (
-              <label key={key} className="flex cursor-pointer items-center gap-2 py-0.5 text-sm">
-                <input
-                  type="checkbox"
-                  checked={ui.overlays[key]}
-                  onChange={(e) =>
-                    setUi({ ...ui, overlays: { ...ui.overlays, [key]: e.target.checked } })
-                  }
-                />
-                {OVERLAY_LAYERS[key].label}
-              </label>
-            ))}
-
-            <div className="mt-3 border-t border-gray-100 pt-2">
-              <label className="flex cursor-pointer items-center gap-2 py-0.5 text-sm">
-                <input
-                  type="checkbox"
-                  checked={ui.showOthers}
-                  onChange={(e) => setUi({ ...ui, showOthers: e.target.checked })}
-                />
-                Andere Touren
-              </label>
-              <label className="flex items-center justify-between gap-2 py-1 text-sm">
-                Routenfarbe
-                <input
-                  type="color"
-                  value={routeColor}
-                  onChange={(e) => handleRouteColor(e.target.value)}
-                  className="h-6 w-10 cursor-pointer rounded border border-gray-200"
-                  title="Farbe der Routenlinie (pro Konto gespeichert)"
-                />
-              </label>
-            </div>
-          </div>
+        {onOpenBook && (
+          <RailButton title="Book öffnen" onClick={onOpenBook}>
+            <text
+              x="12"
+              y="18.5"
+              textAnchor="middle"
+              fontSize="19"
+              fontWeight="700"
+              stroke="none"
+              style={{ fill: 'var(--app-primary)', fontFamily: 'var(--font-sans)' }}
+            >
+              B
+            </text>
+          </RailButton>
         )}
+
+        <RailButton title="Hineinzoomen" onClick={() => mapRef.current?.zoomIn()}>
+          <path d="M12 5v14M5 12h14" />
+        </RailButton>
+        <RailButton title="Herauszoomen" onClick={() => mapRef.current?.zoomOut()}>
+          <path d="M5 12h14" />
+        </RailButton>
+
+        <RailButton
+          title={
+            geoState === 'active'
+              ? 'Standort folgen beenden'
+              : geoState === 'background'
+                ? 'Zum Standort zurück'
+                : 'Meinen Standort zeigen'
+          }
+          active={geoState === 'active'}
+          onClick={() => {
+            if (geoState === 'off') setGeoState('pending')
+            geolocateRef.current?.trigger()
+          }}
+        >
+          {geoState === 'pending' ? (
+            <path className="origin-center animate-spin" d="M12 3a9 9 0 1 0 9 9" />
+          ) : (
+            <path
+              d="M3 11 22 2l-9 19-2-8-8-2z"
+              fill={geoState === 'active' ? 'currentColor' : 'none'}
+              className={geoState === 'background' ? 'text-blue-600' : undefined}
+            />
+          )}
+        </RailButton>
       </div>
 
       {tour && !tour.geometry && !editor && (
@@ -724,5 +793,45 @@ export function MapView({
         </div>
       )}
     </div>
+  )
+}
+
+/** Runder Knopf der rechten Kartenleiste; Kinder sind SVG-Inhalte (24er-Raster). */
+function RailButton({
+  title,
+  active = false,
+  onClick,
+  children,
+}: {
+  title: string
+  active?: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      className={`flex h-10 w-10 items-center justify-center rounded-full shadow-md ring-1 transition duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 active:scale-95 ${
+        active
+          ? 'bg-gray-900 text-white ring-gray-900'
+          : 'bg-white/95 text-gray-700 ring-gray-900/10 backdrop-blur-md hover:bg-white hover:text-gray-900'
+      }`}
+      title={title}
+      aria-label={title}
+      aria-pressed={active || undefined}
+      onClick={onClick}
+    >
+      <svg
+        className="h-[18px] w-[18px]"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        {children}
+      </svg>
+    </button>
   )
 }

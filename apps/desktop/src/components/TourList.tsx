@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { Tour } from '@tourenbuch/shared'
 import { useSharedTours, useTours, useTourMutations } from '../hooks/useTours'
 import type { UploadQueueStatus } from '../hooks/useUploadQueue'
 import { formatDistance, formatDuration, formatMeters } from '../lib/format'
 import { StatusBadge } from './StatusBadge'
-import { ConfirmDialog } from './ConfirmDialog'
 
 interface Props {
   selectedId: string | null
@@ -30,7 +29,7 @@ function Logo() {
         Tourenbuch
       </span>
       <svg
-        className="absolute -bottom-1 left-0.5 h-2 w-[calc(100%-0.75rem)] text-blue-600"
+        className="absolute -bottom-1 left-0.5 h-2 w-[calc(100%-0.75rem)] text-black"
         viewBox="0 0 100 8"
         preserveAspectRatio="none"
         fill="none"
@@ -63,7 +62,8 @@ export function TourList({
   const [query, setQuery] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [openAfterRenameId, setOpenAfterRenameId] = useState<string | null>(null)
-  const [deleteCandidate, setDeleteCandidate] = useState<Tour | null>(null)
+  // Höchstens eine Zeile ist nach links gewischt; Tippen ausserhalb schliesst sie.
+  const [swipedId, setSwipedId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const { createTour, updateTour, deleteTour } = useTourMutations(setErrorMessage)
 
@@ -102,8 +102,18 @@ export function TourList({
     }
   }
 
+  useEffect(() => {
+    if (!swipedId) return
+    const onDown = (e: PointerEvent) => {
+      const row = (e.target as Element | null)?.closest?.('[data-swipe-id]')
+      if (row?.getAttribute('data-swipe-id') !== swipedId) setSwipedId(null)
+    }
+    document.addEventListener('pointerdown', onDown)
+    return () => document.removeEventListener('pointerdown', onDown)
+  }, [swipedId])
+
   function handleDelete(tour: Tour) {
-    setDeleteCandidate(null)
+    setSwipedId(null)
     if (selectedId === tour.id) onSelect(null)
     deleteTour.mutate({ id: tour.id })
   }
@@ -111,14 +121,14 @@ export function TourList({
   return (
     <aside className="flex h-full w-full flex-col bg-gray-50 md:overflow-hidden md:rounded-lg md:border md:border-gray-200 md:bg-white/95 md:shadow-xl md:backdrop-blur-md">
       <div className="border-b border-gray-200 px-3 pb-3 pt-3 md:pt-0">
-        {/* Desktop: Logo-Abstand 12px oben / 31px unten (Vorgabe). */}
-        <div className="mb-3 px-1 md:mb-[31px] md:mt-3">
+        {/* Logo-Abstand unten: mobil 28px, Desktop 12px oben / 31px unten (Vorgaben). */}
+        <div className="mb-7 px-1 md:mb-[31px] md:mt-3">
           <Logo />
         </div>
         <div className="flex items-center gap-2">
           {canCreate && (
             <button
-              className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              className="shrink-0 rounded-lg bg-black px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
               title="Neue Tour anlegen"
               onClick={handleCreate}
             >
@@ -201,7 +211,9 @@ export function TourList({
                   data: { status: tour.status === 'geplant' ? 'gemacht' : 'geplant' },
                 })
               }
-              onDelete={() => setDeleteCandidate(tour)}
+              swipeOpen={swipedId === tour.id}
+              onSwipeOpenChange={(open) => setSwipedId(open ? tour.id : null)}
+              onSwipeDelete={() => handleDelete(tour)}
             />
           ))}
         </ul>
@@ -225,7 +237,6 @@ export function TourList({
                   onStartEdit={() => {}}
                   onRename={() => {}}
                   onToggleStatus={() => {}}
-                  onDelete={() => {}}
                 />
               ))}
             </ul>
@@ -296,15 +307,6 @@ export function TourList({
           </button>
         </div>
       </div>
-
-      {deleteCandidate && (
-        <ConfirmDialog
-          title="Tour löschen?"
-          message={`«${deleteCandidate.name}» wird samt allen Cards und Bildern gelöscht.`}
-          onConfirm={() => handleDelete(deleteCandidate)}
-          onCancel={() => setDeleteCandidate(null)}
-        />
-      )}
     </aside>
   )
 }
@@ -318,7 +320,7 @@ interface ItemProps {
   readOnly: boolean
   /** Inline-Umbenennen zulassen, wenn editing gesetzt ist (Default: !readOnly). */
   renamable?: boolean
-  /** Löschen-Button zeigen (Default: !readOnly). */
+  /** Löschen per Wischen nach links zulassen (Default: !readOnly). */
   deletable?: boolean
   selected: boolean
   editing: boolean
@@ -326,7 +328,32 @@ interface ItemProps {
   onStartEdit: () => void
   onRename: (name: string) => void
   onToggleStatus: () => void
-  onDelete: () => void
+  /** Zeile ist nach links gewischt (rote Löschzone sichtbar). */
+  swipeOpen?: boolean
+  /** Ohne Handler kein Wischen (z. B. geteilte Touren). */
+  onSwipeOpenChange?: (open: boolean) => void
+  /** Tippen auf die rote Löschzone: sofort löschen. */
+  onSwipeDelete?: () => void
+}
+
+/** Breite der roten Löschzone hinter einer nach links gewischten Zeile. */
+const SWIPE_W = 80
+
+function TrashIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6" />
+    </svg>
+  )
 }
 
 function TourListItem({
@@ -342,9 +369,25 @@ function TourListItem({
   onStartEdit,
   onRename,
   onToggleStatus,
-  onDelete,
+  swipeOpen = false,
+  onSwipeOpenChange,
+  onSwipeDelete,
 }: ItemProps) {
   const inputRef = useRef<HTMLInputElement>(null)
+  // Wischen nach links legt die rote Löschzone frei (nur eigene Touren, nicht beim Umbenennen).
+  const swipeable = deletable && !editing && onSwipeOpenChange !== undefined
+  const [dragX, setDragX] = useState<number | null>(null)
+  const dragXRef = useRef<number | null>(null)
+  const gesture = useRef<{
+    id: number
+    x: number
+    y: number
+    base: number
+    axis: 'x' | 'y' | null
+  } | null>(null)
+  // Nach einem Wisch feuert der Browser noch einen Klick – der soll die Tour nicht öffnen.
+  const suppressClick = useRef(false)
+  const offset = dragX ?? (swipeOpen ? -SWIPE_W : 0)
 
   useEffect(() => {
     if (editing) {
@@ -353,82 +396,143 @@ function TourListItem({
     }
   }, [editing])
 
+  const setDrag = (x: number | null) => {
+    dragXRef.current = x
+    setDragX(x)
+  }
+
+  const endGesture = (e: ReactPointerEvent) => {
+    const g = gesture.current
+    if (!g || g.id !== e.pointerId) return
+    gesture.current = null
+    if (g.axis !== 'x') return
+    suppressClick.current = true
+    const x = dragXRef.current ?? g.base
+    setDrag(null)
+    onSwipeOpenChange?.(x < -SWIPE_W / 2)
+  }
+
   return (
-    <li
-      className={`group cursor-pointer border-b border-gray-100 px-3 py-2 ${
-        selected ? 'bg-blue-50' : 'hover:bg-gray-100'
-      }`}
-      onClick={onSelect}
-    >
-      <div className="flex items-center justify-between gap-2">
-        {editing && renamable ? (
-          <input
-            ref={inputRef}
-            defaultValue={tour.name}
-            enterKeyHint="done"
-            className="w-full rounded border border-blue-400 px-1 py-0.5 text-sm"
-            onClick={(e) => e.stopPropagation()}
-            onBlur={(e) => onRename(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') onRename(e.currentTarget.value)
-              if (e.key === 'Escape') onRename(tour.name)
-            }}
-          />
-        ) : (
-          <span
-            className="truncate text-sm font-medium text-gray-900"
-            title={readOnly ? undefined : 'Doppelklick zum Umbenennen'}
-            onDoubleClick={
-              readOnly
-                ? undefined
-                : (e) => {
-                    e.stopPropagation()
-                    onStartEdit()
-                  }
-            }
-          >
-            {tour.name}
-          </span>
-        )}
-        {deletable && (
-          <button
-            className="hidden shrink-0 rounded px-1 text-gray-400 hover:bg-red-100 hover:text-red-600 group-hover:block touch:block"
-            title="Tour löschen"
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete()
-            }}
-          >
-            🗑
-          </button>
-        )}
-      </div>
-      {ownerName && (
-        <div className="mt-0.5 text-xs text-gray-400">
-          von {ownerName}
-          {canWrite && <span title="Du darfst diese Tour bearbeiten"> · ✎ bearbeitbar</span>}
-        </div>
+    <li data-swipe-id={tour.id} className="relative overflow-hidden border-b border-gray-100">
+      {swipeable && (
+        <button
+          className="absolute inset-y-0 right-0 flex items-center justify-center bg-red-600 text-white active:bg-red-700"
+          // Wächst beim Überziehen mit, damit keine Lücke entsteht.
+          style={{
+            width: Math.max(SWIPE_W, -offset),
+            visibility: offset < 0 ? 'visible' : 'hidden',
+          }}
+          title="Tour löschen"
+          aria-label={`Tour «${tour.name}» löschen`}
+          tabIndex={swipeOpen ? 0 : -1}
+          onClick={onSwipeDelete}
+        >
+          <TrashIcon />
+        </button>
       )}
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
-        <span className="whitespace-nowrap">{formatDistance(tour.distance_m)}</span>
-        <span className="whitespace-nowrap">↑ {formatMeters(tour.ascent_m)}</span>
-        <span className="whitespace-nowrap">🕓 {formatDuration(tour.duration_min)}</span>
-        {readOnly ? (
-          <span className="ml-auto">
-            <StatusBadge status={tour.status} />
-          </span>
-        ) : (
-          <button
-            className="ml-auto"
-            title="Status umschalten"
-            onClick={(e) => {
-              e.stopPropagation()
-              onToggleStatus()
-            }}
-          >
-            <StatusBadge status={tour.status} />
-          </button>
+      <div
+        className={`group relative cursor-pointer px-3 py-2 touch-pan-y ${
+          selected ? 'bg-blue-50' : 'bg-gray-50 hover:bg-gray-100 md:bg-white md:hover:bg-gray-100'
+        } ${dragX === null ? 'transition-transform duration-200 ease-out' : 'select-none'}`}
+        style={offset ? { transform: `translateX(${offset}px)` } : undefined}
+        onPointerDown={(e) => {
+          suppressClick.current = false
+          if (!swipeable || e.button !== 0) return
+          gesture.current = {
+            id: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            base: swipeOpen ? -SWIPE_W : 0,
+            axis: null,
+          }
+        }}
+        onPointerMove={(e) => {
+          const g = gesture.current
+          if (!g || g.id !== e.pointerId) return
+          const dx = e.clientX - g.x
+          const dy = e.clientY - g.y
+          if (!g.axis) {
+            // Richtung erst nach ein paar Pixeln festlegen; vertikal = Liste scrollen.
+            if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
+            g.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y'
+            if (g.axis === 'x') e.currentTarget.setPointerCapture(e.pointerId)
+          }
+          if (g.axis !== 'x') return
+          let x = g.base + dx
+          // Gummiband: nach rechts kaum, über die Löschzone hinaus gedämpft.
+          if (x > 0) x /= 4
+          else if (x < -SWIPE_W) x = -SWIPE_W + (x + SWIPE_W) / 3
+          setDrag(x)
+        }}
+        onPointerUp={endGesture}
+        onPointerCancel={endGesture}
+        onClick={() => {
+          if (suppressClick.current) {
+            suppressClick.current = false
+            return
+          }
+          if (swipeOpen) onSwipeOpenChange?.(false)
+          else onSelect()
+        }}
+      >
+        <div className="flex items-center justify-between gap-2">
+          {editing && renamable ? (
+            <input
+              ref={inputRef}
+              defaultValue={tour.name}
+              enterKeyHint="done"
+              className="w-full rounded border border-blue-400 px-1 py-0.5 text-sm"
+              onClick={(e) => e.stopPropagation()}
+              onBlur={(e) => onRename(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onRename(e.currentTarget.value)
+                if (e.key === 'Escape') onRename(tour.name)
+              }}
+            />
+          ) : (
+            <span
+              className="truncate text-sm font-medium text-gray-900"
+              title={readOnly ? undefined : 'Doppelklick zum Umbenennen'}
+              onDoubleClick={
+                readOnly
+                  ? undefined
+                  : (e) => {
+                      e.stopPropagation()
+                      onStartEdit()
+                    }
+              }
+            >
+              {tour.name}
+            </span>
+          )}
+        </div>
+        {ownerName && (
+          <div className="mt-0.5 text-xs text-gray-400">
+            von {ownerName}
+            {canWrite && <span title="Du darfst diese Tour bearbeiten"> · ✎ bearbeitbar</span>}
+          </div>
         )}
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
+          <span className="whitespace-nowrap">{formatDistance(tour.distance_m)}</span>
+          <span className="whitespace-nowrap">↑ {formatMeters(tour.ascent_m)}</span>
+          <span className="whitespace-nowrap">🕓 {formatDuration(tour.duration_min)}</span>
+          {readOnly ? (
+            <span className="ml-auto">
+              <StatusBadge status={tour.status} />
+            </span>
+          ) : (
+            <button
+              className="ml-auto"
+              title="Status umschalten"
+              onClick={(e) => {
+                e.stopPropagation()
+                onToggleStatus()
+              }}
+            >
+              <StatusBadge status={tour.status} />
+            </button>
+          )}
+        </div>
       </div>
     </li>
   )
