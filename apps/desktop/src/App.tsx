@@ -394,13 +394,19 @@ function Shell() {
           {/* Kennzahlen-Leiste (PRD F3) */}
           {tab === 'karte' && statsSource && (statsSource.distance_m > 0 || editing) && (
             <div
-              className={`absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-gray-200 bg-white/95 px-4 py-1.5 text-sm text-gray-800 shadow-md ${fullscreen ? '' : 'md:left-[calc(50%+0.125rem)]'}`}
+              className={`absolute bottom-6 left-1/2 z-10 w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-lg border border-gray-200 bg-white/95 px-4 py-1.5 text-center text-sm text-gray-800 shadow-md ${fullscreen ? '' : 'md:left-[calc(50%+0.125rem)]'}`}
             >
-              {(statsSource.distance_m / 1000).toFixed(1)} km
-              <span className="mx-2 text-gray-300">·</span>↑ {statsSource.ascent_m ?? '–'} m
-              <span className="mx-2 text-gray-300">·</span>↓ {statsSource.descent_m ?? '–'} m
-              <span className="mx-2 text-gray-300">·</span>
-              {statsSource.duration_min !== null ? formatDuration(statsSource.duration_min) : '–'}
+              {/* Mobil zwei Zeilen (Distanz · Zeit / Höhenmeter), ab md eine Zeile. */}
+              <span className="block whitespace-nowrap md:inline">
+                {(statsSource.distance_m / 1000).toFixed(1)} km
+                <span className="mx-2 text-gray-300">·</span>
+                {statsSource.duration_min !== null ? formatDuration(statsSource.duration_min) : '–'}
+              </span>
+              <span className="mx-2 hidden text-gray-300 md:inline">·</span>
+              <span className="block whitespace-nowrap md:inline">
+                ↑ {statsSource.ascent_m ?? '–'} m
+                <span className="mx-2 text-gray-300">·</span>↓ {statsSource.descent_m ?? '–'} m
+              </span>
             </div>
           )}
 
