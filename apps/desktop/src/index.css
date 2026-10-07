@@ -9,6 +9,18 @@
   src: url('/fonts/caveat-700-latin.woff2') format('woff2');
 }
 
+/* App-Schrift: Alpino (Fontshare, ITF Free Font License) als Variable Font, deckt alle
+   Gewichte 100–900 ab. Selbst gehostet (PWA offline); die Datei ist gitignored, weil die
+   Lizenz die Weitergabe über öffentliche Repos verbietet. Bezug: fontshare.com/fonts/alpino,
+   Fonts/WEB/fonts/Alpino-Variable.woff2 → public/fonts/alpino-variable.woff2 */
+@font-face {
+  font-family: 'Alpino';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/alpino-variable.woff2') format('woff2');
+}
+
 /* Primärfarbe = aktuelle Routenfarbe (wird in MapView zur Laufzeit gesetzt).
    Die Tailwind-Blautöne werden daraus abgeleitet, so folgt die ganze App der Farbe. */
 :root {
@@ -26,6 +38,8 @@
   --color-blue-700: color-mix(in oklab, var(--app-primary) 82%, black);
   --color-blue-800: color-mix(in oklab, var(--app-primary) 65%, black);
   --color-blue-900: color-mix(in oklab, var(--app-primary) 50%, black);
+  --font-sans:
+    'Alpino', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
   --font-logo: 'Caveat', 'Bradley Hand', 'Segoe Script', 'Comic Sans MS', cursive;
 
   /* Layout-Auswahl der neuen Kachel: kurz aufploppen. */
@@ -50,6 +64,11 @@ html,
 body,
 #root {
   height: 100%;
+}
+
+/* MapLibre setzt für Controls und Attribution eine eigene Schrift. */
+.maplibregl-map {
+  font-family: var(--font-sans);
 }
 
 /* Desktop-Layout: Sidebar schwebt links über der Karte, Reiter-Pille oben daneben.

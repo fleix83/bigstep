@@ -21,3 +21,8 @@ apps/desktop/src-tauri/target/
 # OS / Editor
 .DS_Store
 *.log
+
+# Alpino (Fontshare FFL): Self-Hosting erlaubt, Weitergabe über öffentliche
+# Repos nicht. Download-Paket und Webfont bleiben lokal; Quelle siehe index.css.
+/fonts/
+apps/desktop/public/fonts/alpino-*
