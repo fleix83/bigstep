@@ -68,7 +68,8 @@ function Shell() {
   const uploadStatus = useUploadQueue(config !== null)
   const [fullscreen, setFullscreen] = useState(false)
   const [editing, setEditing] = useState(false)
-  const editor = useRouteEditor(selectedTour, editing && !readOnly && canWrite && tab === 'karte')
+  // Route zeichnen ist auch mobil erlaubt (Ausnahme vom Read-only-Modus, PRD F6).
+  const editor = useRouteEditor(selectedTour, editing && canWrite && tab === 'karte')
   const [highlightCardId, setHighlightCardId] = useState<string | null>(null)
   // Bild ↔ Foto-Pin: Hover ist flüchtig, Klick auf einen Pin bleibt markiert.
   const [hoverImageId, setHoverImageId] = useState<string | null>(null)
@@ -346,9 +347,9 @@ function Shell() {
           />
 
           {/* Editor-Toolbar */}
-          {!readOnly && canWrite && tab === 'karte' && selectedTour && (
+          {canWrite && tab === 'karte' && selectedTour && (
             <div
-              className={`absolute left-2 top-2 z-10 flex items-center gap-1 rounded-lg border border-gray-200 bg-white/95 px-2 py-1.5 shadow-md ${fullscreen ? '' : 'md:left-[22.75rem] md:top-[3.875rem]'}`}
+              className={`absolute left-2 top-12 z-10 flex items-center gap-1 rounded-lg border border-gray-200 bg-white/95 px-2 py-1.5 shadow-md ${fullscreen ? 'md:top-2' : 'md:left-[22.75rem] md:top-[3.875rem]'}`}
             >
               {!editing ? (
                 <button
@@ -421,11 +422,42 @@ function Shell() {
 
           {editing && (
             <div
-              className={`absolute bottom-16 left-1/2 z-10 -translate-x-1/2 rounded bg-gray-900/75 px-3 py-1 text-xs text-white ${fullscreen ? '' : 'md:left-[calc(50%+0.125rem)]'}`}
+              className={`absolute bottom-24 left-1/2 z-10 w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded bg-gray-900/75 px-3 py-1 text-center text-xs text-white md:bottom-16 ${fullscreen ? '' : 'md:left-[calc(50%+0.125rem)]'}`}
             >
-              Klick: Punkt anhängen · Klick auf Linie: Punkt einfügen · Ziehen: verschieben ·
-              Rechtsklick: löschen
+              <span className="touch:hidden">
+                Klick: Punkt anhängen · Klick auf Linie: Punkt einfügen · Ziehen: verschieben ·
+                Rechtsklick: löschen
+              </span>
+              <span className="hidden touch:inline">
+                Lange tippen: Punkt setzen · Punkt ziehen: verschieben
+              </span>
             </div>
+          )}
+
+          {/* Touch: grosser Zurück-Knopf unten links, nimmt den letzten Schritt zurück
+              (wie in der swisstopo-App). */}
+          {editing && editor && (
+            <button
+              className="absolute bottom-6 left-3 z-10 hidden h-12 w-12 items-center justify-center rounded-full bg-white text-blue-700 shadow-md ring-1 ring-gray-200 transition active:scale-95 disabled:text-gray-300 touch:flex"
+              aria-label="Letzten Schritt zurücknehmen"
+              title="Zurück"
+              disabled={!editor.canUndo}
+              onClick={() => editor.undo()}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                className="h-6 w-6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2.2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M9 14 4 9l5-5" />
+                <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+              </svg>
+            </button>
           )}
 
           {/* Book-Modus auf Desktop/Tablet: Kacheln kompakt als schwebende Spalte rechts

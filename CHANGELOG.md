@@ -1,5 +1,12 @@
 # Changelog
 
+## Route zeichnen auf dem Smartphone (2026-10-11)
+
+- **Route bearbeiten ist jetzt auch mobil verfügbar** (Ausnahme vom Read-only-Modus, PRD F6); die Toolbar sitzt mobil unter der Ortssuche.
+- **Langes Tippen (500 ms) setzt einen Wegpunkt**, wie in der swisstopo-App; auf einer bestehenden Linie wird eingefügt. Kurzes Tippen, Verschieben und Zoomen setzen nichts. Kurze Vibration als Bestätigung, wo unterstützt.
+- **Runder Zurück-Knopf unten links** nimmt den letzten Schritt zurück (Undo). Wegpunkte sind auf Touch-Geräten grösser (20 px) und lassen sich ziehen; das Android-Kontextmenü beim langen Tippen auf einen Punkt löscht ihn nicht mehr.
+- Hinweistext passt sich an (Touch: «Lange tippen: Punkt setzen · Punkt ziehen: verschieben») und liegt mobil über der zweizeiligen Kennzahlen-Karte.
+
 ## Teilen mit bestimmten Personen + Schreibrecht (2026-09-19)
 
 - **Ursache des «Upload-Bugs» auf Mobile:** Die Kollegin arbeitete in einer öffentlich geteilten Tour — die war bisher strikt read-only, jede Schreiboperation lieferte 404.

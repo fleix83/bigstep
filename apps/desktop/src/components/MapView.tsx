@@ -78,6 +78,9 @@ interface Props {
   onOpenBook?: () => void
 }
 
+/** Gerät ohne Hover (Smartphone, Tablet): gleiche Bedingung wie die CSS-Variante `touch:`. */
+const isTouchDevice = () => window.matchMedia('(hover: none)').matches
+
 export interface PhotoPin {
   imageId: string
   cardId: string
@@ -331,24 +334,20 @@ export function MapView({
     // zusätzlich auf sämtliche initialen Kacheln warten.
     map.on('style.load', () => setReady(true))
     map.on('moveend', () => scheduleSaveRef.current())
-    map.on('click', (e) => {
-      const p: [number, number] = [
-        Math.round(e.lngLat.lng * 1e6) / 1e6,
-        Math.round(e.lngLat.lat * 1e6) / 1e6,
-      ]
-      // «Position setzen»: Klick liefert die Bildposition, sonst nichts.
-      if (placingRef.current) {
-        onPlaceClickRef.current?.(p)
-        return
-      }
+    // Wegpunkt an einer Bildschirmposition setzen: auf einem Segment wird
+    // eingefügt, auf freier Karte angehängt.
+    const addWaypointAt = (
+      point: { x: number; y: number },
+      ll: { lng: number; lat: number },
+      tol: number
+    ) => {
       const ed = editorRef.current
       if (!ed) return
-      // Klick auf ein bestehendes Segment fügt dort einen Wegpunkt ein,
-      // Klick auf freie Karte hängt einen Wegpunkt an.
+      const p: [number, number] = [Math.round(ll.lng * 1e6) / 1e6, Math.round(ll.lat * 1e6) / 1e6]
       const hits = map.queryRenderedFeatures(
         [
-          [e.point.x - 6, e.point.y - 6],
-          [e.point.x + 6, e.point.y + 6],
+          [point.x - tol, point.y - tol],
+          [point.x + tol, point.y + tol],
         ],
         { layers: ['active-tour-line', 'active-tour-dashed'] }
       )
@@ -356,7 +355,54 @@ export function MapView({
         ?.segIdx as number | undefined
       if (segIdx !== undefined) ed.insertOnSegment(segIdx, p)
       else ed.addWaypoint(p)
+    }
+    map.on('click', (e) => {
+      // «Position setzen»: Klick liefert die Bildposition, sonst nichts.
+      if (placingRef.current) {
+        onPlaceClickRef.current?.([
+          Math.round(e.lngLat.lng * 1e6) / 1e6,
+          Math.round(e.lngLat.lat * 1e6) / 1e6,
+        ])
+        return
+      }
+      // Touch: Wegpunkte nur per langem Tippen (wie in der swisstopo-App),
+      // damit normales Tippen und Verschieben der Karte nichts setzt.
+      if (isTouchDevice()) return
+      addWaypointAt(e.point, e.lngLat, 6)
     })
+    // Langes Tippen (500 ms, ein Finger, kaum Bewegung) setzt im Editor einen Wegpunkt.
+    let pressTimer: number | undefined
+    let pressStart: { x: number; y: number } | null = null
+    const cancelPress = () => {
+      window.clearTimeout(pressTimer)
+      pressTimer = undefined
+      pressStart = null
+    }
+    map.on('touchstart', (e) => {
+      cancelPress()
+      if (!editorRef.current || placingRef.current || e.originalEvent.touches.length !== 1) return
+      // Halten auf einem Wegpunkt-Marker ist der Beginn eines Ziehens.
+      if ((e.originalEvent.target as Element | null)?.closest?.('.maplibregl-marker')) return
+      const point = e.point
+      const ll = e.lngLat
+      pressStart = { x: point.x, y: point.y }
+      pressTimer = window.setTimeout(() => {
+        pressTimer = undefined
+        pressStart = null
+        navigator.vibrate?.(30)
+        addWaypointAt(point, ll, 12)
+      }, 500)
+    })
+    map.on('touchmove', (e) => {
+      if (!pressStart) return
+      if (
+        e.originalEvent.touches.length !== 1 ||
+        Math.hypot(e.point.x - pressStart.x, e.point.y - pressStart.y) > 10
+      )
+        cancelPress()
+    })
+    map.on('touchend', cancelPress)
+    map.on('touchcancel', cancelPress)
     mapRef.current = map
     return () => {
       map.remove()
@@ -413,16 +459,21 @@ export function MapView({
     for (const m of markersRef.current) m.remove()
     markersRef.current = []
     if (!map || !ready || !editor) return
+    const touch = isTouchDevice()
     editor.waypoints.forEach((wp, i) => {
       const el = document.createElement('div')
       const color =
         i === 0 ? '#16a34a' : i === editor.waypoints.length - 1 ? '#dc2626' : 'var(--app-primary)'
-      el.style.cssText = `width:14px;height:14px;border-radius:50%;background:${color};border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:grab`
+      // Auf Touch-Geräten grösser, damit sich die Punkte mit dem Finger ziehen lassen.
+      const size = touch ? 20 : 14
+      el.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:grab`
       el.title = 'Ziehen zum Verschieben, Rechtsklick zum Löschen'
       el.addEventListener('contextmenu', (ev) => {
         ev.preventDefault()
         ev.stopPropagation()
-        editorRef.current?.deleteWaypoint(i)
+        // Android löst «contextmenu» beim langen Tippen aus: dort nicht löschen
+        // (mobil nimmt der Zurück-Knopf Punkte weg).
+        if (!touch) editorRef.current?.deleteWaypoint(i)
       })
       const marker = new Marker({ element: el, draggable: true })
         .setLngLat([wp[0], wp[1]])
